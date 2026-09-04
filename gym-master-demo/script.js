@@ -552,6 +552,12 @@ function renderMemberProfile(memberId) {
           <div class="pc-row"><span>Paid</span><span style="color:var(--green)">${fmtMoney(getTotalPaid(m))}</span></div>
           <div class="pc-row"><span>Balance</span><span style="color:${Math.max(0, mem.finalPrice - getTotalPaid(m)) > 0 ? 'var(--red)' : 'var(--green)'}">${fmtMoney(Math.max(0, mem.finalPrice - getTotalPaid(m)))}</span></div>
           <div class="pc-row"><span>Payment Status</span><span class="status-badge ${mem.paymentStatus === 'paid' ? 'status-active' : mem.paymentStatus === 'partial' ? 'status-partial' : 'status-pending'}">${paymentLabel(mem.paymentStatus)}</span></div>
+          ${mem.paymentStatus !== 'paid' ? `<div class="pc-row"><span>Expected Payment</span><span>${mem.expectedPaymentDate ? fmtDate(mem.expectedPaymentDate) : '—'}</span></div>` : ''}
+          ${isMembershipFrozen(mem) ? `<div class="pc-row"><span>Freeze Status</span><span class="status-badge status-frozen">⏸️ Frozen</span></div>` : ''}
+          ${mem.freezeHistory && mem.freezeHistory.length > 0 ? `
+            <div class="pc-row"><span>Freeze History</span><span></span></div>
+            ${mem.freezeHistory.map(f => `<div class="freeze-row">⏸️ ${fmtDate(f.start)} → ${fmtDate(f.end)} (${f.days}d)${f.reason ? ' • ' + f.reason : ''}</div>`).join('')}
+          ` : ''}
           ${mem.paymentStatus !== 'paid' ? `<button class="btn btn-primary btn-block" onclick="openPayment('${m.id}')">💰 Record Payment</button>` : ''}
           ${offer ? `<div class="pc-row"><span>Offer Applied</span><span>${offer.name}</span></div>` : ''}
         ` : '<div class="empty-state"><div class="es-text">No active membership</div></div>'}
@@ -817,6 +823,7 @@ function deleteOffer(id) {
 // ======================== PAYMENTS PAGE ========================
 let payStatusFilter = 'all';
 let payMethodFilter = 'all';
+let paySearchQ = '';
 function totalPendingAcrossMemberships() {
   let sum = 0;
   DB.members.forEach(m => {
@@ -863,14 +870,14 @@ function renderPayments() {
         <option value="Card" ${payMethodFilter==='Card'?'selected':''}>Card</option>
         <option value="Bank Transfer" ${payMethodFilter==='Bank Transfer'?'selected':''}>Bank Transfer</option>
       </select>
-      <input id="pay-search" type="text" placeholder="Search member…" oninput="this.dataset.q=this.value;renderPayments()" class="pay-filter-select">
+      <input id="pay-search" type="text" placeholder="Search member…" value="${paySearchQ}" oninput="paySearchQ=this.value;renderPayments()" class="pay-filter-select">
     </div>
   `;
 
   let shown = [...all];
   if (payStatusFilter !== 'all') shown = shown.filter(p => p.status === payStatusFilter);
   if (payMethodFilter !== 'all') shown = shown.filter(p => p.method === payMethodFilter);
-  const q = (document.getElementById('pay-search')?.dataset.q || '').toLowerCase();
+  const q = (paySearchQ || '').toLowerCase();
   if (q) shown = shown.filter(p => {
     const m = DB.members.find(x => x.id === p.memberId);
     return (m && m.name.toLowerCase().includes(q)) || (m && m.phone && normalizePhone(m.phone).includes(q));
@@ -1318,7 +1325,9 @@ function openAddMember() {
   document.getElementById('am-photo-preview').classList.remove('has-photo');
   document.getElementById('am-photo-preview').style.backgroundImage = '';
   document.getElementById('am-goal-custom').style.display = 'none';
-  document.getElementById('am-goal-custom-chip').querySelector('input').checked = false;
+  const customChip = document.getElementById('am-goal-custom-chip');
+  const customChipInput = customChip && customChip.querySelector('input');
+  if (customChipInput) customChipInput.checked = false;
   document.getElementById('am-paystatus').value = 'auto';
   document.getElementById('am-expected-wrap').style.display = 'none';
   document.getElementById('am-expected').value = '';
@@ -1419,8 +1428,6 @@ function openEditMember(memberId) {
 
   document.getElementById('am-paystatus').value = 'auto';
   document.getElementById('am-expected-wrap').style.display = 'none';
-  document.getElementById('am-metadata').style.display = 'none';
-  document.getElementById('am-pass').style.display = 'none';
 
   renderMemberPlansAndOffers();
   openModal('modal-add-member');
@@ -1532,32 +1539,79 @@ function checkDuplicate(field, value) {
 
 function handleAddMember(e) {
   e.preventDefault();
-  if (isDuplicate) { showToast('Please resolve duplicate first', 'error'); return false; }
-  if (!selectedPlanId) { showToast('Please select a membership plan', 'error'); return false; }
 
-  const goals = [...document.querySelectorAll('#am-goals input:checked')].map(c => c.value);
+  // Validation
+  const name = document.getElementById('am-name').value.trim();
+  const phone = document.getElementById('am-phone').value.trim();
+  if (!name) { showToast('Please enter member name', 'error'); return false; }
+  if (!phone || normalizePhone(phone).length < 10) { showToast('Please enter a valid 10-digit phone number', 'error'); return false; }
+
+  if (isDuplicate) { showToast('Please resolve duplicate first', 'error'); return false; }
+
+  // Custom goal handling
+  const goals = [...document.querySelectorAll('#am-goals input:checked')].map(c => c.value).filter(g => g !== 'Custom Goal');
+  const customGoal = document.getElementById('am-goal-custom').value.trim();
+  if (customGoal) goals.push(customGoal);
+  const expectedDate = document.getElementById('am-expected').value;
+  const payStatusSel = document.getElementById('am-paystatus').value;
+
+  if (editingMemberId) {
+    // ============ UPDATE EXISTING MEMBER ============
+    const m = DB.members.find(x => x.id === editingMemberId);
+    if (!m) { showToast('Member not found', 'error'); return false; }
+    m.name = name;
+    m.phone = phone;
+    m.whatsapp = document.getElementById('am-whatsapp').value.trim() || phone;
+    m.email = document.getElementById('am-email').value.trim();
+    m.dob = document.getElementById('am-dob').value;
+    m.gender = document.getElementById('am-gender').value;
+    m.registrationDate = document.getElementById('am-regdate').value || m.registrationDate;
+    m.goals = goals;
+    m.emergency = document.getElementById('am-emergency').value.trim();
+    m.notes = document.getElementById('am-notes').value.trim();
+    m.familyGroupId = document.getElementById('am-family').value.trim() || null;
+    if (memberPhotoData) m.photo = memberPhotoData;
+    m.updatedAt = new Date().toISOString();
+    saveDB();
+    closeModal('modal-add-member');
+    showToast('Member updated successfully', 'success');
+    if (currentPage === 'member-profile') renderMemberProfile(m.id);
+    else if (currentPage === 'members') renderMembers();
+    else if (currentPage === 'dashboard') renderDashboard();
+    return false;
+  }
+
   const plan = DB.plans.find(p => p.id === selectedPlanId);
+  if (!plan) { showToast('Please select a membership plan', 'error'); return false; }
   const offer = selectedOfferId ? DB.offers.find(o => o.id === selectedOfferId) : null;
+  if (offer && !offerApplies(offer, plan.id)) { showToast('Selected offer is no longer valid', 'error'); return false; }
   const originalPrice = plan.price;
   const discount = offer ? calculateOfferDiscount(offer, originalPrice) : 0;
   const finalPrice = Math.max(0, originalPrice - discount);
-  const paid = parseInt(document.getElementById('am-paid').value) || 0;
+  let paid = parseInt(document.getElementById('am-paid').value) || 0;
+  if (paid > finalPrice) { showToast('Amount paid cannot exceed the final amount', 'error'); return false; }
   const regDate = document.getElementById('am-regdate').value || today();
 
   const memberId = genId('GM');
   const expiryDate = addDuration(regDate, plan.duration, plan.unit);
 
-  // Check for family group based on 1+1 offer
+  // Family group: from 1+1 offer or manual entry
   let familyGroupId = null;
-  if (offer && offer.type === '1plus1') {
-    familyGroupId = 'FAM-' + Date.now().toString().slice(-6);
-  }
+  const manualFamily = document.getElementById('am-family').value.trim();
+  if (manualFamily) familyGroupId = manualFamily;
+  else if (offer && offer.type === '1plus1') familyGroupId = 'FAM-' + Date.now().toString().slice(-6);
+
+  // Determine payment status + expected date from selection
+  let payStatus = paid >= finalPrice ? 'paid' : paid > 0 ? 'partial' : 'pending';
+  if (payStatusSel === 'paid') { payStatus = 'paid'; paid = finalPrice; }
+  else if (payStatusSel === 'pending') { payStatus = 'pending'; paid = 0; }
+  else if (payStatusSel === 'partial') { payStatus = 'partial'; }
 
   const member = {
     id: memberId,
-    name: document.getElementById('am-name').value.trim(),
-    phone: document.getElementById('am-phone').value.trim(),
-    whatsapp: document.getElementById('am-whatsapp').value.trim() || document.getElementById('am-phone').value.trim(),
+    name: name,
+    phone: phone,
+    whatsapp: document.getElementById('am-whatsapp').value.trim() || phone,
     email: document.getElementById('am-email').value.trim(),
     dob: document.getElementById('am-dob').value,
     gender: document.getElementById('am-gender').value,
@@ -1566,6 +1620,7 @@ function handleAddMember(e) {
     emergency: document.getElementById('am-emergency').value.trim(),
     notes: document.getElementById('am-notes').value.trim(),
     familyGroupId: familyGroupId,
+    photo: memberPhotoData || null,
     status: 'active',
     memberships: [{
       id: genId('MEM'),
@@ -1576,7 +1631,8 @@ function handleAddMember(e) {
       originalPrice: originalPrice,
       discount: discount,
       finalPrice: finalPrice,
-      paymentStatus: paid >= finalPrice ? 'paid' : paid > 0 ? 'partial' : 'pending',
+      paymentStatus: payStatus,
+      expectedPaymentDate: payStatus === 'pending' ? expectedDate : null,
       status: 'active',
       freezeHistory: [],
       createdAt: new Date().toISOString()
@@ -1745,15 +1801,6 @@ function quickRenew() {
   showToast('Select a member to renew', 'warning');
 }
 
-function quickPayment() {
-  const pending = DB.payments.filter(p => p.status === 'pending' || p.status === 'partial');
-  if (pending.length === 0) {
-    showToast('No pending payments!');
-    return;
-  }
-  navigateTo('payments');
-}
-
 // ======================== FREEZE ========================
 function openFreeze(memberId) {
   const m = DB.members.find(x => x.id === memberId);
@@ -1811,37 +1858,222 @@ function processFreeze(memberId) {
   if (!start || !end) { showToast('Please select freeze dates', 'error'); return; }
   const days = daysBetween(start, end);
   if (days <= 0) { showToast('Freeze end date must be after start', 'error'); return; }
+  if (isMembershipFrozen(mem)) { showToast('Membership is already frozen', 'error'); return; }
 
   // Extend expiry
   mem.expiryDate = addDuration(mem.expiryDate, days, 'Days');
-  mem.freezeHistory.push({ start, end, days, reason: document.getElementById('freeze-reason').value });
+  mem.freezeHistory.push({ start, end, days, reason: document.getElementById('freeze-reason').value, date: today() });
   m.updatedAt = new Date().toISOString();
 
   saveDB();
   closeModal('modal-freeze');
   showToast(`Membership frozen for ${days} days. Expiry extended to ${fmtDate(mem.expiryDate)}`, 'success');
-  renderMemberProfile(memberId);
+  if (currentPage === 'member-profile') renderMemberProfile(memberId);
+  else if (currentPage === 'members') renderMembers();
+  else if (currentPage === 'dashboard') renderDashboard();
 }
 
-// ======================== STOP MEMBERSHIP ========================
-function stopMember(memberId) {
-  showConfirm('Stop Membership?', 'The member\'s membership will be stopped. This will be recorded in history.', 'Stop', '⏸', () => {
-    const m = DB.members.find(x => x.id === memberId);
-    if (!m) return;
-    m.status = 'stopped';
-    const mem = getActiveMembership(m);
-    if (mem) mem.status = 'stopped';
-    m.updatedAt = new Date().toISOString();
-    saveDB();
-    showToast('Membership stopped');
-    renderMemberProfile(memberId);
+// ======================== DISCONTINUE MEMBERSHIP ========================
+function openDiscontinue(memberId) {
+  const m = DB.members.find(x => x.id === memberId);
+  if (!m) return;
+  const mem = getActiveMembership(m);
+  const reasons = ['Personal', 'Financial', 'Relocated', 'Schedule Conflict', 'Not Interested', 'Found Other Gym', 'Other'];
+  let body = `
+    <div style="margin-bottom:16px">
+      <h3>Discontinue for: ${m.name}</h3>
+      <p style="font-size:13px;color:var(--gray-500)">${m.id} • Current Expiry: ${mem ? fmtDate(mem.expiryDate) : '—'}</p>
+    </div>
+    <div class="form-group"><label>Reason *</label>
+      <select id="disp-reason">${reasons.map(r => `<option value="${r}">${r}</option>`).join('')}</select>
+    </div>
+    <div class="form-group"><label>Notes</label>
+      <textarea id="disp-notes" rows="2" placeholder="Optional notes about the discontinuation..."></textarea>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal('modal-discontinue')">Cancel</button>
+      <button class="btn btn-danger" onclick="processDiscontinue('${memberId}')">⏹ Confirm Discontinue</button>
+    </div>`;
+  document.getElementById('discontinue-body').innerHTML = body;
+  openModal('modal-discontinue');
+}
+
+function processDiscontinue(memberId) {
+  const m = DB.members.find(x => x.id === memberId);
+  if (!m) return;
+  const reason = document.getElementById('disp-reason').value;
+  const notes = document.getElementById('disp-notes').value.trim();
+  m.status = 'discontinued';
+  const mem = getActiveMembership(m);
+  if (mem) { mem.status = 'discontinued'; mem.discontinuedDate = today(); }
+  if (!m.discontinuations) m.discontinuations = [];
+  m.discontinuations.push({ date: today(), reason: reason, reasonLabel: reason, notes: notes, by: 'Admin' });
+  m.updatedAt = new Date().toISOString();
+  saveDB();
+  closeModal('modal-discontinue');
+  showToast('Membership discontinued', 'success');
+  if (currentPage === 'member-profile') renderMemberProfile(memberId);
+  else if (currentPage === 'members') renderMembers();
+  else if (currentPage === 'dashboard') renderDashboard();
+}
+
+// ======================== PAYMENT MODAL ========================
+let paymentMemberId = null;
+function openPayment(memberId) {
+  const m = memberId ? DB.members.find(x => x.id === memberId) : null;
+  let memberSelect = '';
+  if (!m) {
+    const eligible = DB.members.filter(x => {
+      const mem2 = getActiveMembership(x);
+      return mem2 && mem2.status !== 'discontinued';
+    });
+    if (eligible.length === 0) { showToast('No members with active memberships', 'error'); return; }
+    memberSelect = `<div class="form-group"><label>Select Member *</label>
+      <select id="pay-member" onchange="paymentMemberId=this.value;updatePaymentForm()">
+        <option value="">Choose member…</option>
+        ${eligible.map(x => `<option value="${x.id}">${x.name} (${x.id})</option>`).join('')}
+      </select></div>`;
+  } else {
+    paymentMemberId = m.id;
+  }
+
+  let body = `
+    ${memberSelect}
+    <div id="pay-member-info"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Amount *</label><input type="number" id="pay-amount" min="0" placeholder="0" required></div>
+      <div class="form-group"><label>Payment Method</label>
+        <select id="pay-method"><option value="Cash">Cash</option><option value="UPI">UPI</option><option value="Card">Card</option><option value="Bank Transfer">Bank Transfer</option><option value="Other">Other</option></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Date</label><input type="date" id="pay-date" value="${today()}"></div>
+      <div class="form-group"><label>Expected Next Payment</label><input type="date" id="pay-expected"></div>
+    </div>
+    <div class="form-group"><label>Notes</label><input type="text" id="pay-notes" placeholder="Optional note"></div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal('modal-payment')">Cancel</button>
+      <button class="btn btn-primary" onclick="processPayment()">💰 Save Payment</button>
+    </div>`;
+  document.getElementById('payment-body').innerHTML = body;
+
+  if (m) updatePaymentForm();
+  openModal('modal-payment');
+}
+
+function updatePaymentForm() {
+  const infoEl = document.getElementById('pay-member-info');
+  if (!paymentMemberId) { infoEl.innerHTML = ''; return; }
+  const m = DB.members.find(x => x.id === paymentMemberId);
+  const mem = getActiveMembership(m);
+  if (!m || !mem) { infoEl.innerHTML = ''; return; }
+  const plan = DB.plans.find(p => p.id === mem.planId);
+  const paid = getTotalPaid(m);
+  const due = Math.max(0, mem.finalPrice - paid);
+  const payAmount = document.getElementById('pay-amount');
+  if (payAmount) payAmount.max = mem.finalPrice;
+  infoEl.innerHTML = `
+    <div class="pricing-summary" style="margin-bottom:16px">
+      <div class="pricing-row"><span>Member</span><span><strong>${m.name}</strong></span></div>
+      <div class="pricing-row"><span>Plan</span><span>${plan ? plan.name : '—'}</span></div>
+      <div class="pricing-row"><span>Total Amount</span><span>${fmtMoney(mem.finalPrice)}</span></div>
+      <div class="pricing-row"><span>Paid So Far</span><span style="color:var(--green)">${fmtMoney(paid)}</span></div>
+      <div class="pricing-row total"><span>Balance</span><span style="color:${due > 0 ? 'var(--red)' : 'var(--green)'}">${fmtMoney(due)}</span></div>
+      ${due === 0 ? '<div class="pricing-row"><span>Status</span><span class="status-badge status-active">Fully Paid</span></div>' : ''}
+    </div>`;
+}
+
+function processPayment() {
+  if (!paymentMemberId) { showToast('Please select a member', 'error'); return; }
+  const amount = parseInt(document.getElementById('pay-amount').value) || 0;
+  if (amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
+  const m = DB.members.find(x => x.id === paymentMemberId);
+  const mem = getActiveMembership(m);
+  if (!mem) { showToast('No active membership', 'error'); return; }
+  const paid = getTotalPaid(m);
+  if (amount > Math.max(0, mem.finalPrice - paid)) { showToast('Amount exceeds the remaining balance', 'error'); return; }
+
+  const date = document.getElementById('pay-date').value || today();
+  DB.payments.push({
+    id: genId('PAY'),
+    memberId: m.id,
+    membershipId: mem.id,
+    amount: amount,
+    method: document.getElementById('pay-method').value,
+    date: date,
+    status: paid + amount >= mem.finalPrice ? 'paid' : 'partial',
+    pendingAmount: Math.max(0, mem.finalPrice - (paid + amount)),
+    type: 'payment',
+    notes: document.getElementById('pay-notes').value.trim(),
+    createdAt: new Date().toISOString()
   });
+  const expected = document.getElementById('pay-expected').value;
+  mem.expectedPaymentDate = expected || null;
+  recomputePaymentStatus(mem);
+  m.updatedAt = new Date().toISOString();
+  saveDB();
+  closeModal('modal-payment');
+  showToast('Payment recorded successfully', 'success');
+  if (currentPage === 'member-profile') renderMemberProfile(m.id);
+  else if (currentPage === 'members') renderMembers();
+  else if (currentPage === 'payments') renderPayments();
+  else if (currentPage === 'dashboard') renderDashboard();
+}
+
+function quickPayment() {
+  const dueMembers = DB.members.filter(x => {
+    const mem2 = getActiveMembership(x);
+    return mem2 && mem2.status !== 'discontinued' && getTotalPaid(x) < mem2.finalPrice;
+  });
+  if (dueMembers.length === 0) {
+    showToast('No members have pending payments', 'success');
+    navigateTo('payments');
+    return;
+  }
+  openPayment();
 }
 
 // ======================== SEARCH ========================
+let searchDebounce = null;
 function handleGlobalSearch(val) {
-  if (currentPage !== 'members') navigateTo('members');
-  else renderMembers();
+  if (searchDebounce) clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(() => {
+    if (currentPage !== 'members') navigateTo('members');
+    else renderMembers();
+  }, 200);
+}
+
+// ======================== FAMILY ========================
+function openFamily(familyGroupId) {
+  const members = DB.members.filter(x => x.familyGroupId === familyGroupId);
+  if (members.length === 0) { showToast('No family members found', 'error'); return; }
+  let html = '';
+  members.forEach(m => {
+    const mem = getActiveMembership(m);
+    const st = getMemberStatus(m);
+    const plan = mem ? DB.plans.find(p => p.id === mem.planId) : null;
+    html += `
+      <div class="family-row" onclick="closeModal('modal-family');navigateTo('member-profile','${m.id}')">
+        <div class="fu-avatar">${memberInitials(m.name)}</div>
+        <div class="fu-info">
+          <div class="fu-name">${m.name}</div>
+          <div class="fu-detail">${m.id} • ${plan ? plan.name : 'No plan'} • Expires ${mem ? fmtDate(mem.expiryDate) : '—'}</div>
+        </div>
+        <span class="status-badge ${getStatusClass(st)}">${getStatusLabel(st)}</span>
+      </div>`;
+  });
+  document.getElementById('family-body').innerHTML = html || '<div class="empty-state"><div class="es-text">No members in this family.</div></div>';
+  openModal('modal-family');
+}
+
+// ======================== WHATSAPP ========================
+function openWhatsApp(memberId) {
+  const m = DB.members.find(x => x.id === memberId);
+  if (!m) return;
+  const phone = normalizePhone(m.whatsapp || m.phone);
+  const encoded = encodeURIComponent(`Hi ${m.name}, this is GYM MASTER.`);
+  const url = `https://wa.me/91${phone}?text=${encoded}`;
+  if (window.open) { window.open(url, '_blank'); } else { showToast('WhatsApp not available', 'error'); }
 }
 
 // ======================== DEMO DATA ========================
@@ -2037,16 +2269,42 @@ function generateDemoData() {
 }
 
 // ======================== INIT ========================
+function migrateLegacyData() {
+  (DB.members || []).forEach(m => {
+    if (m.status === 'stopped') m.status = 'discontinued';
+    (m.memberships || []).forEach(mem => {
+      if (mem.status === 'stopped') mem.status = 'discontinued';
+      recomputePaymentStatus(mem);
+    });
+  });
+  if (!DB.settings) DB.settings = {};
+}
+
 function init() {
   if (!loadDB()) {
     generateDemoData();
     saveDB();
   }
+  migrateLegacyData();
+  saveDB();
   // Check if plans exist (in case of data corruption)
   if (!DB.plans || DB.plans.length === 0) {
     generateDemoData();
     saveDB();
+    migrateLegacyData();
+    saveDB();
   }
+  // Custom goal chip toggles the custom input
+  const chip = document.getElementById('am-goal-custom-chip');
+  if (chip && typeof chip.addEventListener === 'function') {
+    chip.addEventListener('click', function() {
+      const cb = this.querySelector('input');
+      const customInput = document.getElementById('am-goal-custom');
+      if (customInput) customInput.style.display = cb && cb.checked ? 'block' : 'none';
+    });
+  }
+  // Only show PIN field at login if a PIN has been set
+  showLogin();
   // Close modals/sheets when tapping the backdrop
   document.addEventListener('click', function(e) {
     if (e.target.classList.contains('modal-overlay')) {

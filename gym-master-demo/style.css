@@ -537,6 +537,45 @@ textarea { resize: vertical; }
 .status-expired { background: var(--red-light); color: var(--red); }
 .status-pending { background: var(--yellow-light); color: var(--yellow); }
 .status-stopped { background: var(--gray-100); color: var(--gray-500); }
+.status-partial { background: #FEF3C7; color: var(--yellow); }
+.status-frozen { background: #E0F2FE; color: #0284C7; }
+.status-discontinued { background: var(--gray-100); color: var(--gray-500); text-decoration: line-through; }
+
+/* Photo upload for add/edit member */
+.photo-upload { display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; }
+.photo-preview {
+  width: 88px; height: 88px; border-radius: 50%;
+  border: 2px dashed var(--gray-200);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 30px; color: var(--gray-400);
+  background-size: cover; background-position: center; background-color: var(--gray-100);
+}
+.photo-preview.has-photo { border: 2px solid var(--green); }
+.photo-hint { font-size: 12px; color: var(--gray-400); font-weight: 600; }
+.form-row-center { justify-content: center; }
+.member-photo { border-radius: 50%; background-size: cover; background-position: center; background-color: var(--gray-100); display: inline-block; }
+
+/* Member cards due row */
+.mc-due { padding: 6px 10px; border-radius: var(--radius-sm); background: #FEF3C7; color: var(--yellow); font-size: 12px; font-weight: 800; align-self: flex-start; }
+.mc-due.paid { background: var(--green-light); color: var(--green); }
+.table-actions { display: flex; gap: 4px; }
+
+/* Payment filters on payments page */
+.pay-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.pay-filter-select { padding: 10px 12px; border: 1.5px solid var(--gray-200); border-radius: var(--radius-sm); font-size: 14px; background: #fff; }
+
+/* Freeze history rows */
+.freeze-row { font-size: 12px; color: var(--gray-500); padding: 2px 0; }
+
+/* Family modal rows */
+.family-row { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--gray-200); border-radius: var(--radius-sm); margin-bottom: 8px; cursor: pointer; }
+.family-row:hover { background: var(--gray-50); }
+
+/* Offer card disabled state when at usage limit */
+.offer-select-card.disabled { opacity: 0.55; pointer-events: none; }
+
+/* Focus visibility for accessibility */
+:focus-visible { outline: 2px solid #2563EB; outline-offset: 2px; }
 
 /* ======================== MEMBERS PAGE ======================== */
 .members-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }

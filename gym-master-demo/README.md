@@ -1,6 +1,6 @@
-# 🏋️ GYM MASTER
+# 🏋️ The Change Fitness Gym
 
-A production-quality, mobile-first gym membership management demo — built with pure HTML, CSS and JavaScript. No build step, no frameworks. Works offline in any modern browser and is ready to deploy on Vercel as a static site.
+A production-quality, mobile-first gym membership management app for **The Change Fitness Gym** — Thondamuthur, Coimbatore, owned by **Sasikumar N (Owner & Head Coach)**. Built with pure HTML, CSS and JavaScript. No build step, no frameworks. Works offline in any modern browser and is ready to deploy on Vercel as a static site.
 
 ## ✨ Features
 
@@ -30,7 +30,7 @@ A production-quality, mobile-first gym membership management demo — built with
 
 ### Security & Data
 - Optional **Admin PIN** (4–6 digits) shown only at login when enabled. Stored only in the browser.
-- All data persists in `localStorage` under `gymmaster_data`. Legacy data is auto-migrated on load (e.g. old "Stopped" → "Discontinued").
+- All data persists in `localStorage` under the app's storage key. Legacy data is auto-migrated on load (e.g. old "Stopped" → "Discontinued").
 - Centralized business rules (`calcFinalPrice`, `offerApplies`, `getMemberStatus`, …) are kept decoupled from the UI so a future Flutter app can reuse the same logic.
 
 ## 📱 Device Support

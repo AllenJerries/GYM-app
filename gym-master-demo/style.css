@@ -172,8 +172,8 @@ textarea { resize: vertical; }
   to { opacity: 1; transform: translateY(0); }
 }
 .login-logo { font-size: 52px; margin-bottom: 6px; line-height: 1; }
-.login-title { font-size: 26px; font-weight: 900; }
-.login-subtitle { color: var(--gray-500); margin-bottom: 28px; font-size: 14px; }
+.login-title { font-size: 22px; font-weight: 900; line-height: 1.25; text-align: center; }
+.login-subtitle { color: var(--gray-500); margin-bottom: 28px; font-size: 13px; text-align: center; }
 .login-card .form-group { text-align: left; }
 .login-card .btn-block { margin-top: 8px; min-height: 52px; font-size: 16px; }
 .demo-badge {
@@ -287,7 +287,7 @@ textarea { resize: vertical; }
   justify-content: center;
   color: var(--gray-700);
 }
-.topbar-brand { font-weight: 800; font-size: 15px; letter-spacing: -0.3px; white-space: nowrap; }
+.topbar-brand { font-weight: 800; font-size: 15px; letter-spacing: -0.3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .topbar-search { order: 5; flex: 1 1 100%; position: relative; }
 .topbar-search input {
   width: 100%;
@@ -1063,6 +1063,14 @@ textarea { resize: vertical; }
   background: var(--gray-200);
   border-radius: 3px;
   margin: 8px auto 16px;
+}
+.sheet-brand {
+  text-align: center;
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--red);
+  margin-bottom: 12px;
+  letter-spacing: -0.2px;
 }
 .as-item {
   display: flex;

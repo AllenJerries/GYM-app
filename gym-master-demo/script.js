@@ -273,7 +273,7 @@ function renderDashboard() {
 
   let html = `
     <div class="dash-head">
-      <h1>${getGreeting()}, Master 👋</h1>
+      <h1>${getGreeting()}, Sasi Master 👋</h1>
       <p>Here's what needs your attention today.</p>
     </div>
 
@@ -330,7 +330,7 @@ function renderDashboard() {
                   `Expires in ${daysBetween(today(), f.membership.expiryDate)} days`;
       const plan = DB.plans.find(p => p.id === f.membership.planId);
       const phone = normalizePhone(f.member.whatsapp || f.member.phone);
-      const msg = encodeURIComponent(f.type === 'payment' ? `Hi ${f.member.name}, this is a reminder from GYM MASTER. A payment of ${fmtMoney(due)} is due on your membership. Please visit the gym to settle it. Thank you!` : `Hi ${f.member.name}, this is a reminder from GYM MASTER. Your gym membership ${f.type === 'expired' ? 'has expired' : 'is expiring soon'}. Please visit the gym to renew. Thank you!`);
+      const msg = encodeURIComponent(f.type === 'payment' ? `Hi ${f.member.name}, this is a reminder from The Change Fitness Gym. A payment of ${fmtMoney(due)} is due on your membership. Please visit the gym to settle it. Thank you!` : `Hi ${f.member.name}, this is a reminder from The Change Fitness Gym. Your gym membership ${f.type === 'expired' ? 'has expired' : 'is expiring soon'}. Please visit the gym to renew. Thank you!`);
       html += `
         <div class="followup-card">
           <div class="fu-avatar">${memberInitials(f.member.name)}</div>
@@ -1098,18 +1098,21 @@ function downloadPDF() {
   const pendingAmount = totalPendingAcrossMemberships();
 
   // Title
-  doc.setFontSize(22);
+  doc.setFontSize(20);
   doc.setTextColor(220, 38, 38);
-  doc.text('GYM MASTER', 105, 20, { align: 'center' });
+  doc.text('THE CHANGE FITNESS GYM', 105, 19, { align: 'center' });
+  doc.setFontSize(11);
+  doc.setTextColor(90, 90, 90);
+  doc.text('Sasikumar N — Owner & Head Coach  |  Thondamuthur, Coimbatore', 105, 25, { align: 'center' });
   doc.setFontSize(14);
   doc.setTextColor(60, 60, 60);
-  doc.text('Monthly Business Report', 105, 28, { align: 'center' });
+  doc.text('Monthly Business Report', 105, 33, { align: 'center' });
   doc.setFontSize(12);
-  doc.text(monthName, 105, 35, { align: 'center' });
+  doc.text(monthName, 105, 40, { align: 'center' });
 
   doc.setDrawColor(220, 38, 38);
   doc.setLineWidth(0.5);
-  doc.line(20, 40, 190, 40);
+  doc.line(20, 45, 190, 45);
 
   // Summary
   doc.setFontSize(14);
@@ -1167,7 +1170,7 @@ function downloadPDF() {
     sy += 6;
   });
 
-  doc.save('GymMaster_Report_' + val + '.pdf');
+  doc.save('ChangeFitness_Report_' + val + '.pdf');
   showToast('PDF downloaded successfully', 'success');
 }
 
@@ -1206,9 +1209,10 @@ function renderSettings() {
 
     <div class="settings-section">
       <h3>ℹ️ About</h3>
-      <p>GYM MASTER v1.0 — Demo Version</p>
-      <p>A simple, powerful gym membership management system.</p>
-      <p style="margin-top:8px;color:var(--gray-400)">Built with ❤️ for gym owners</p>
+      <p><strong>The Change Fitness Gym</strong> — v1.0</p>
+      <p>Sasikumar N — Owner & Head Coach</p>
+      <p>Thondamuthur, Coimbatore</p>
+      <p style="margin-top:8px;color:var(--gray-400)">Built with ❤️ for Sasi Master's gym</p>
     </div>
   `;
   document.getElementById('page-settings').innerHTML = html;
@@ -1258,7 +1262,7 @@ function exportBackup() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'gymmaster_backup_' + today() + '.json';
+  a.download = 'changefitness_backup_' + today() + '.json';
   a.click();
   URL.revokeObjectURL(url);
   showToast('Backup exported successfully', 'success');
@@ -2080,7 +2084,7 @@ function openWhatsApp(memberId) {
   const m = DB.members.find(x => x.id === memberId);
   if (!m) return;
   const phone = normalizePhone(m.whatsapp || m.phone);
-  const encoded = encodeURIComponent(`Hi ${m.name}, this is GYM MASTER.`);
+  const encoded = encodeURIComponent(`Hi ${m.name}, this is The Change Fitness Gym.`);
   const url = `https://wa.me/91${phone}?text=${encoded}`;
   if (window.open) { window.open(url, '_blank'); } else { showToast('WhatsApp not available', 'error'); }
 }

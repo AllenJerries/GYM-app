@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>GYM MASTER - Gym Management System</title>
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -93,6 +93,7 @@
     <!-- TOP BAR -->
     <header class="topbar">
       <button class="hamburger" onclick="toggleSidebar()">☰</button>
+      <div class="topbar-brand">🏋️ GYM MASTER</div>
       <div class="topbar-search">
         <span class="search-icon">🔎</span>
         <input type="text" id="global-search" placeholder="Search members by name, phone or ID..." oninput="handleGlobalSearch(this.value)">
@@ -118,10 +119,13 @@
   <nav class="bottom-nav">
     <a class="bnav-item active" data-page="dashboard" onclick="navigateTo('dashboard')"><span>🏠</span><small>Home</small></a>
     <a class="bnav-item" data-page="members" onclick="navigateTo('members')"><span>👥</span><small>Members</small></a>
-    <a class="bnav-item bnav-add" onclick="openAddMember()"><span class="bnav-add-icon">➕</span></a>
+    <a class="bnav-item" data-page="plans" onclick="navigateTo('plans')"><span>💳</span><small>Plans</small></a>
     <a class="bnav-item" data-page="payments" onclick="navigateTo('payments')"><span>💰</span><small>Payments</small></a>
-    <a class="bnav-item" data-page="settings" onclick="navigateTo('settings')"><span>⚙️</span><small>More</small></a>
+    <a class="bnav-item" onclick="openMoreSheet()"><span>⚙️</span><small>More</small></a>
   </nav>
+
+  <!-- FLOATING ADD MEMBER (mobile) -->
+  <button class="fab" onclick="openAddMember()" aria-label="Add Member">➕</button>
 </div>
 
 <!-- ===================== MODALS ===================== -->
@@ -375,6 +379,17 @@
       <button class="modal-close" onclick="closeModal('modal-report-preview')">✕</button>
     </div>
     <div class="modal-body" id="report-preview-body"></div>
+  </div>
+</div>
+
+<!-- MORE ACTION SHEET (mobile) -->
+<div id="more-sheet" class="sheet-overlay" style="display:none">
+  <div class="action-sheet">
+    <div class="sheet-handle"></div>
+    <button class="as-item" onclick="closeSheet('more-sheet');navigateTo('reports')"><span class="as-icon">📊</span>Reports</button>
+    <button class="as-item" onclick="closeSheet('more-sheet');navigateTo('offers')"><span class="as-icon">🎁</span>Offers</button>
+    <button class="as-item" onclick="closeSheet('more-sheet');navigateTo('settings')"><span class="as-icon">⚙️</span>Settings</button>
+    <button class="as-item as-cancel" onclick="closeSheet('more-sheet')">Cancel</button>
   </div>
 </div>
 

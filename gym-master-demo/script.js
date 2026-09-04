@@ -90,12 +90,37 @@ function showConfirm(title, msg, btnText, icon, cb) {
   confirmCb = cb;
   document.getElementById('confirm-btn').onclick = function() { closeConfirm(); if (confirmCb) confirmCb(); };
   document.getElementById('confirm-modal').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  document.body.style.touchAction = 'none';
 }
-function closeConfirm() { document.getElementById('confirm-modal').style.display = 'none'; confirmCb = null; }
+function closeConfirm() { document.getElementById('confirm-modal').style.display = 'none'; confirmCb = null; releaseBodyScroll(); }
 
 // ======================== MODALS ========================
-function openModal(id) { document.getElementById(id).style.display = 'flex'; }
-function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+function openModal(id) {
+  document.getElementById(id).style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  document.body.style.touchAction = 'none';
+}
+function closeModal(id) {
+  document.getElementById(id).style.display = 'none';
+  releaseBodyScroll();
+}
+function openMoreSheet() {
+  document.getElementById('more-sheet').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  document.body.style.touchAction = 'none';
+}
+function closeSheet(id) {
+  document.getElementById(id).style.display = 'none';
+  releaseBodyScroll();
+}
+function releaseBodyScroll() {
+  const anyOpen = document.querySelector('.modal-overlay[style*="flex"], .sheet-overlay[style*="flex"]');
+  if (!anyOpen) {
+    document.body.style.overflow = '';
+    document.body.style.touchAction = '';
+  }
+}
 
 // ======================== LOGIN ========================
 function handleLogin(e) {
@@ -140,7 +165,6 @@ function renderDashboard() {
   const members = DB.members;
   const todayStr = today();
 
-  // Calculate expiry stats
   let expired = 0, expToday = 0, exp3 = 0, exp7 = 0;
   let activeCount = 0;
   const followups = [];
@@ -176,45 +200,45 @@ function renderDashboard() {
   const renewalsThisMonth = thisMonth.filter(p => p.type === 'renewal').length;
 
   let html = `
-    <div class="dash-greeting">
+    <div class="dash-head">
       <h1>${getGreeting()}, Master 👋</h1>
       <p>Here's what needs your attention today.</p>
     </div>
 
-    <div class="section-title">⚠️ Membership Status</div>
-    <div class="expiry-grid">
+    <div class="section-head">⚠️ Membership Status</div>
+    <div class="expiry-list">
       <div class="expiry-card red" onclick="navigateTo('members','expired')">
-        <div class="ec-label">🔴 Expired</div>
-        <div class="ec-count">${expired}</div>
+        <div class="ec-main"><span class="ec-icon">🔴</span><div><div class="ec-label">Expired</div><div class="ec-count">${expired} <span style="font-size:12px;font-weight:600;color:var(--gray-400)">members</span></div></div></div>
+        <span class="ec-arrow">›</span>
       </div>
       <div class="expiry-card red" onclick="navigateTo('members','expiring-today')">
-        <div class="ec-label">🔴 Expiring Today</div>
-        <div class="ec-count">${expToday}</div>
+        <div class="ec-main"><span class="ec-icon">🔴</span><div><div class="ec-label">Expiring Today</div><div class="ec-count">${expToday} <span style="font-size:12px;font-weight:600;color:var(--gray-400)">members</span></div></div></div>
+        <span class="ec-arrow">›</span>
       </div>
       <div class="expiry-card orange" onclick="navigateTo('members','expiring-3')">
-        <div class="ec-label">🟠 Expiring in 3 Days</div>
-        <div class="ec-count">${exp3}</div>
+        <div class="ec-main"><span class="ec-icon">🟠</span><div><div class="ec-label">Expiring in 3 Days</div><div class="ec-count">${exp3} <span style="font-size:12px;font-weight:600;color:var(--gray-400)">members</span></div></div></div>
+        <span class="ec-arrow">›</span>
       </div>
       <div class="expiry-card yellow" onclick="navigateTo('members','expiring-7')">
-        <div class="ec-label">🟡 Expiring in 7 Days</div>
-        <div class="ec-count">${exp7}</div>
+        <div class="ec-main"><span class="ec-icon">🟡</span><div><div class="ec-label">Expiring in 7 Days</div><div class="ec-count">${exp7} <span style="font-size:12px;font-weight:600;color:var(--gray-400)">members</span></div></div></div>
+        <span class="ec-arrow">›</span>
       </div>
     </div>
 
-    <div class="section-title">📊 Overview</div>
-    <div class="stats-grid">
-      <div class="stat-card"><div class="sc-label">Total Members</div><div class="sc-value">${members.length}</div></div>
-      <div class="stat-card green"><div class="sc-label">Active Members</div><div class="sc-value">${activeCount}</div></div>
-      <div class="stat-card"><div class="sc-label">New This Month</div><div class="sc-value">${newThisMonth}</div></div>
-      <div class="stat-card"><div class="sc-label">Renewals This Month</div><div class="sc-value">${renewalsThisMonth}</div></div>
-      <div class="stat-card green"><div class="sc-label">Today's Collection</div><div class="sc-value">${fmtMoney(todayCollection)}</div></div>
-      <div class="stat-card green"><div class="sc-label">Monthly Revenue</div><div class="sc-value">${fmtMoney(monthlyRevenue)}</div></div>
-      <div class="stat-card red"><div class="sc-label">Pending Payments</div><div class="sc-value">${fmtMoney(pendingAmount)}</div></div>
+    <div class="section-head">📊 Overview</div>
+    <div class="stats-list">
+      <div class="stat-row"><div class="sr-label"><span class="sr-icon">👥</span>Total Members</div><div class="sr-value">${members.length}</div></div>
+      <div class="stat-row green"><div class="sr-label"><span class="sr-icon">🟢</span>Active Members</div><div class="sr-value">${activeCount}</div></div>
+      <div class="stat-row"><div class="sr-label"><span class="sr-icon">✨</span>New This Month</div><div class="sr-value">${newThisMonth}</div></div>
+      <div class="stat-row"><div class="sr-label"><span class="sr-icon">🔄</span>Renewals This Month</div><div class="sr-value">${renewalsThisMonth}</div></div>
+      <div class="stat-row green"><div class="sr-label"><span class="sr-icon">💰</span>Today's Collection</div><div class="sr-value">${fmtMoney(todayCollection)}</div></div>
+      <div class="stat-row green"><div class="sr-label"><span class="sr-icon">📈</span>Monthly Revenue</div><div class="sr-value">${fmtMoney(monthlyRevenue)}</div></div>
+      <div class="stat-row red"><div class="sr-label"><span class="sr-icon">🟡</span>Pending Payments</div><div class="sr-value">${fmtMoney(pendingAmount)}</div></div>
     </div>
 
-    <div class="section-title">⚡ Quick Actions</div>
+    <div class="section-head">⚡ Quick Actions</div>
     <div class="quick-actions">
-      <button class="qa-btn" onclick="openAddMember()"><span>➕</span> Add Member</button>
+      <button class="qa-btn primary" onclick="openAddMember()"><span>➕</span> Add Member</button>
       <button class="qa-btn" onclick="quickRenew()"><span>🔄</span> Renew Membership</button>
       <button class="qa-btn" onclick="quickPayment()"><span>💰</span> Record Payment</button>
       <button class="qa-btn" onclick="navigateTo('offers')"><span>🎁</span> Manage Offers</button>
@@ -222,7 +246,6 @@ function renderDashboard() {
     </div>
   `;
 
-  // Follow-up section
   if (followups.length > 0) {
     html += `<div class="section-title">📞 Today's Follow-Up</div><div class="followup-list">`;
     followups.slice(0, 6).forEach(f => {
@@ -241,7 +264,7 @@ function renderDashboard() {
           </div>
           <div class="fu-actions">
             <button class="btn btn-sm btn-secondary" onclick="navigateTo('member-profile','${f.member.id}')">View</button>
-            <a class="btn btn-sm btn-success" href="https://wa.me/91${phone}?text=${msg}" target="_blank">WhatsApp</a>
+            <a class="btn btn-sm btn-success" href="https://wa.me/91${phone}?text=${msg}" target="_blank" rel="noopener">WhatsApp</a>
             <button class="btn btn-sm btn-primary" onclick="openRenew('${f.member.id}')">Renew</button>
           </div>
         </div>`;
@@ -275,7 +298,11 @@ function renderMembers(filter) {
 
   // Filter
   if (membersFilter !== 'all') {
-    members = members.filter(m => getMemberStatus(m) === membersFilter);
+    if (membersFilter.startsWith('expiring')) {
+      members = members.filter(m => getMemberStatus(m).startsWith('expiring'));
+    } else {
+      members = members.filter(m => getMemberStatus(m) === membersFilter);
+    }
   }
 
   // Search
@@ -289,7 +316,11 @@ function renderMembers(filter) {
   }
 
   const counts = { all: DB.members.length, active: 0, 'expiring-3': 0, expired: 0, stopped: 0, pending: 0 };
-  DB.members.forEach(m => { const s = getMemberStatus(m); if (counts[s] !== undefined) counts[s]++; });
+  DB.members.forEach(m => {
+    const s = getMemberStatus(m);
+    if (s.startsWith('expiring')) counts['expiring-3']++;
+    else if (counts[s] !== undefined) counts[s]++;
+  });
 
   let html = `
     <div class="members-header">
@@ -420,9 +451,25 @@ function renderMemberProfile(memberId) {
       </div>
     </div>
 
-    <div class="profile-card" style="background:var(--white);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow-sm)">
+    <div class="profile-card">
       <h3>📜 Membership History</h3>
       ${m.memberships && m.memberships.length > 0 ? `
+        <div class="history-list">
+          ${[...m.memberships].sort((a,b) => new Date(b.startDate) - new Date(a.startDate)).map(mem2 => {
+            const plan2 = DB.plans.find(p => p.id === mem2.planId);
+            const st2 = mem2.status === 'stopped' ? 'stopped' : getExpiryStatus(mem2.expiryDate);
+            return `<div class="history-row">
+              <div class="hr-top">
+                <div class="hr-plan">${plan2 ? plan2.name : '—'}</div>
+                <span class="status-badge ${getStatusClass(st2)}">${getStatusLabel(st2)}</span>
+              </div>
+              <div class="hr-period">📅 ${fmtDate(mem2.startDate)} → ${fmtDate(mem2.expiryDate)}</div>
+              <div class="hr-bottom">
+                <div><span class="hr-price">${fmtMoney(mem2.finalPrice)}</span> <span class="status-badge ${mem2.paymentStatus === 'paid' ? 'status-active' : 'status-pending'}">${mem2.paymentStatus}</span></div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
         <table class="history-table">
           <thead><tr><th>Plan</th><th>Price</th><th>Period</th><th>Payment</th><th>Status</th></tr></thead>
           <tbody>
@@ -656,32 +703,47 @@ function renderPayments() {
   let html = `
     <div class="members-header"><h2>Payments</h2></div>
     <div class="payments-summary">
-      <div class="stat-card green"><div class="sc-label">Today's Collection</div><div class="sc-value">${fmtMoney(todaySum)}</div></div>
-      <div class="stat-card green"><div class="sc-label">This Week</div><div class="sc-value">${fmtMoney(weekSum)}</div></div>
-      <div class="stat-card green"><div class="sc-label">This Month</div><div class="sc-value">${fmtMoney(monthSum)}</div></div>
-      <div class="stat-card red"><div class="sc-label">Pending</div><div class="sc-value">${fmtMoney(pendingSum)}</div></div>
+      <div class="stat-row green"><div class="sr-label"><span class="sr-icon">💰</span>Today's Collection</div><div class="sr-value">${fmtMoney(todaySum)}</div></div>
+      <div class="stat-row green"><div class="sr-label"><span class="sr-icon">📅</span>This Week</div><div class="sr-value">${fmtMoney(weekSum)}</div></div>
+      <div class="stat-row green"><div class="sr-label"><span class="sr-icon">📈</span>This Month</div><div class="sr-value">${fmtMoney(monthSum)}</div></div>
+      <div class="stat-row red"><div class="sr-label"><span class="sr-icon">🟡</span>Pending</div><div class="sr-value">${fmtMoney(pendingSum)}</div></div>
     </div>
-
-    <div class="payments-table-wrapper">
-      <table class="payments-table">
-        <thead><tr><th>Date</th><th>Member</th><th>Type</th><th>Amount</th><th>Method</th><th>Status</th></tr></thead>
-        <tbody>
   `;
-  all.slice(0, 50).forEach(p => {
-    const m = DB.members.find(x => x.id === p.memberId);
-    html += `<tr>
-      <td>${fmtDate(p.date)}</td>
-      <td><strong>${m ? m.name : 'Unknown'}</strong></td>
-      <td>${p.type || '—'}</td>
-      <td><strong>${fmtMoney(p.amount)}</strong></td>
-      <td>${p.method}</td>
-      <td><span class="status-badge ${p.status === 'paid' ? 'status-active' : 'status-pending'}">${p.status}</span></td>
-    </tr>`;
-  });
+
   if (all.length === 0) {
-    html += '<tr><td colspan="6"><div class="empty-state"><div class="es-icon">💰</div><div class="es-text">No payments recorded</div></div></td></tr>';
+    html += '<div class="empty-state"><div class="es-icon">💰</div><div class="es-text">No payments recorded</div><div class="es-sub">Payments will appear here as members join.</div></div>';
+  } else {
+    html += '<div class="payment-cards">';
+    all.slice(0, 30).forEach(p => {
+      const m = DB.members.find(x => x.id === p.memberId);
+      html += `<div class="payment-card">
+        <div class="pc-top">
+          <div class="pc-member">${m ? m.name : 'Unknown'}</div>
+          <div class="pc-amount">${fmtMoney(p.amount)}</div>
+        </div>
+        <div class="pc-bottom">
+          <span class="pc-method">${p.method} • ${p.type || ''}</span>
+          <span class="status-badge ${p.status === 'paid' ? 'status-active' : 'status-pending'}">${p.status}</span>
+        </div>
+        <div class="pc-date" style="margin-top:6px">📅 ${fmtDate(p.date)}</div>
+      </div>`;
+    });
+    html += '</div>';
+
+    html += '<div class="payments-table-wrapper"><table class="payments-table"><thead><tr><th>Date</th><th>Member</th><th>Type</th><th>Amount</th><th>Method</th><th>Status</th></tr></thead><tbody>';
+    all.slice(0, 50).forEach(p => {
+      const m = DB.members.find(x => x.id === p.memberId);
+      html += `<tr>
+        <td>${fmtDate(p.date)}</td>
+        <td><strong>${m ? m.name : 'Unknown'}</strong></td>
+        <td>${p.type || '—'}</td>
+        <td><strong>${fmtMoney(p.amount)}</strong></td>
+        <td>${p.method}</td>
+        <td><span class="status-badge ${p.status === 'paid' ? 'status-active' : 'status-pending'}">${p.status}</span></td>
+      </tr>`;
+    });
+    html += '</tbody></table></div>';
   }
-  html += '</tbody></table></div>';
   document.getElementById('page-payments').innerHTML = html;
 }
 
@@ -747,15 +809,15 @@ function updateReportMonth() {
   const topGoal = Object.entries(goalCounts).sort((a,b) => b[1] - a[1])[0];
 
   let statsHtml = `
-    <div class="stats-grid" style="margin-bottom:20px">
-      <div class="stat-card"><div class="sc-label">Total Members</div><div class="sc-value">${DB.members.length}</div></div>
-      <div class="stat-card green"><div class="sc-label">Active</div><div class="sc-value">${activeMembers.length}</div></div>
-      <div class="stat-card"><div class="sc-label">New Members</div><div class="sc-value">${monthMembers.length}</div></div>
-      <div class="stat-card red"><div class="sc-label">Expired</div><div class="sc-value">${expiredMembers.length}</div></div>
-      <div class="stat-card green"><div class="sc-label">Revenue</div><div class="sc-value">${fmtMoney(totalRevenue)}</div></div>
-      <div class="stat-card red"><div class="sc-label">Pending</div><div class="sc-value">${fmtMoney(pendingAmount)}</div></div>
-      <div class="stat-card"><div class="sc-label">Most Popular Plan</div><div class="sc-value" style="font-size:16px">${topPlan ? topPlan[0] : '—'}</div></div>
-      <div class="stat-card"><div class="sc-label">Top Goal</div><div class="sc-value" style="font-size:16px">${topGoal ? topGoal[0] : '—'}</div></div>
+    <div class="stats-list" style="margin-bottom:18px">
+      <div class="stat-row"><div class="sr-label"><span class="sr-icon">👥</span>Total Members</div><div class="sr-value">${DB.members.length}</div></div>
+      <div class="stat-row green"><div class="sr-label"><span class="sr-icon">🟢</span>Active</div><div class="sr-value">${activeMembers.length}</div></div>
+      <div class="stat-row"><div class="sr-label"><span class="sr-icon">✨</span>New Members</div><div class="sr-value">${monthMembers.length}</div></div>
+      <div class="stat-row red"><div class="sr-label"><span class="sr-icon">🔴</span>Expired</div><div class="sr-value">${expiredMembers.length}</div></div>
+      <div class="stat-row green"><div class="sr-label"><span class="sr-icon">💰</span>Revenue</div><div class="sr-value">${fmtMoney(totalRevenue)}</div></div>
+      <div class="stat-row red"><div class="sr-label"><span class="sr-icon">🟡</span>Pending</div><div class="sr-value">${fmtMoney(pendingAmount)}</div></div>
+      <div class="stat-row"><div class="sr-label"><span class="sr-icon">🏆</span>Most Popular Plan</div><div class="sr-value" style="font-size:16px">${topPlan ? topPlan[0] : '—'}</div></div>
+      <div class="stat-row"><div class="sr-label"><span class="sr-icon">🎯</span>Top Goal</div><div class="sr-value" style="font-size:16px">${topGoal ? topGoal[0] : '—'}</div></div>
     </div>
   `;
   document.getElementById('report-stats').innerHTML = statsHtml;
@@ -1222,7 +1284,7 @@ function openRenew(memberId) {
       ${isExpired ? 'Since membership has expired, the new membership starts from today.' : 'New membership will start from current expiry date so remaining period is not lost.'}
     </p>
     <h3 class="section-title">Select Plan</h3>
-    <div class="plans-grid-display" style="margin-bottom:16px">
+    <div class="plans-grid" style="margin-bottom:16px">
   `;
   DB.plans.filter(p => p.active !== false).forEach(p => {
     body += `
@@ -1635,6 +1697,16 @@ function init() {
     generateDemoData();
     saveDB();
   }
+  // Close modals/sheets when tapping the backdrop
+  document.addEventListener('click', function(e) {
+    if (e.target.classList.contains('modal-overlay')) {
+      e.target.style.display = 'none';
+      releaseBodyScroll();
+    } else if (e.target.classList.contains('sheet-overlay')) {
+      e.target.style.display = 'none';
+      releaseBodyScroll();
+    }
+  });
 }
 
 // Run

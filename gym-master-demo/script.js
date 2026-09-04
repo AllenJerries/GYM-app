@@ -399,7 +399,13 @@ function renderMembers(filter) {
 
   // Filter
   if (membersFilter !== 'all') {
-    if (membersFilter.startsWith('expiring')) {
+    if (membersFilter === 'expiring-today') {
+      members = members.filter(m => getMemberStatus(m) === 'expiring-today');
+    } else if (membersFilter === 'expiring-3') {
+      members = members.filter(m => ['expiring-today', 'expiring-3'].includes(getMemberStatus(m)));
+    } else if (membersFilter === 'expiring-7') {
+      members = members.filter(m => ['expiring-today', 'expiring-3', 'expiring-7'].includes(getMemberStatus(m)));
+    } else if (membersFilter.startsWith('expiring')) {
       members = members.filter(m => getMemberStatus(m).startsWith('expiring'));
     } else {
       members = members.filter(m => getMemberStatus(m) === membersFilter);
@@ -416,10 +422,10 @@ function renderMembers(filter) {
     );
   }
 
-  const counts = { all: DB.members.length, active: 0, 'expiring-3': 0, expired: 0, frozen: 0, discontinued: 0, pending: 0, partial: 0 };
+  const counts = { all: DB.members.length, active: 0, 'expiring': 0, expired: 0, frozen: 0, discontinued: 0, pending: 0, partial: 0 };
   DB.members.forEach(m => {
     const s = getMemberStatus(m);
-    if (s.startsWith('expiring')) counts['expiring-3']++;
+    if (s.startsWith('expiring')) counts['expiring']++;
     else if (s === 'active') counts.active++;
     else if (counts[s] !== undefined) counts[s]++;
   });
@@ -430,7 +436,7 @@ function renderMembers(filter) {
       <div class="filter-tabs">
         <button class="filter-tab ${membersFilter==='all'?'active':''}" onclick="renderMembers('all')">All (${counts.all})</button>
         <button class="filter-tab ${membersFilter==='active'?'active':''}" onclick="renderMembers('active')">Active (${counts.active})</button>
-        <button class="filter-tab ${membersFilter==='expiring-3'?'active':''}" onclick="renderMembers('expiring-3')">Expiring (${counts['expiring-3']})</button>
+        <button class="filter-tab ${membersFilter==='expiring'?'active':''}" onclick="renderMembers('expiring')">Expiring (${counts['expiring']})</button>
         <button class="filter-tab ${membersFilter==='expired'?'active':''}" onclick="renderMembers('expired')">Expired (${counts.expired})</button>
         <button class="filter-tab ${membersFilter==='frozen'?'active':''}" onclick="renderMembers('frozen')">Frozen (${counts.frozen})</button>
         <button class="filter-tab ${membersFilter==='discontinued'?'active':''}" onclick="renderMembers('discontinued')">Discontinued (${counts.discontinued})</button>
@@ -1411,7 +1417,9 @@ function openEditMember(memberId) {
     document.getElementById('am-goal-custom-chip').querySelector('input').checked = true;
   } else {
     document.getElementById('am-goal-custom').style.display = 'none';
-    document.getElementById('am-goal-custom-chip').querySelector('input').checked = false;
+    const customChip = document.getElementById('am-goal-custom-chip');
+    const customChipInput = customChip && customChip.querySelector('input');
+    if (customChipInput) customChipInput.checked = false;
   }
 
   // Photo
@@ -1921,6 +1929,7 @@ function processDiscontinue(memberId) {
 let paymentMemberId = null;
 function openPayment(memberId) {
   const m = memberId ? DB.members.find(x => x.id === memberId) : null;
+  paymentMemberId = m ? m.id : null;
   let memberSelect = '';
   if (!m) {
     const eligible = DB.members.filter(x => {
@@ -2131,7 +2140,7 @@ function generateDemoData() {
 
     let status = 'active';
     if (i >= 0 && i < 3) status = 'active'; // expired but status active (handled by expiry check)
-    if (i === 22) status = 'stopped';
+    if (i === 22) status = 'discontinued';
 
     const memId = 'GM-' + String(100001 + i);
     const membershipId = 'MEM-' + String(200001 + i);
@@ -2160,7 +2169,7 @@ function generateDemoData() {
         discount: i < 2 ? Math.round(plan.price * 0.33) : 0,
         finalPrice: i < 2 ? Math.round(plan.price * 0.67) : plan.price,
         paymentStatus: paymentStatus,
-        status: i === 22 ? 'stopped' : 'active',
+        status: i === 22 ? 'discontinued' : 'active',
         freezeHistory: [],
         createdAt: regDate.toISOString()
       }],

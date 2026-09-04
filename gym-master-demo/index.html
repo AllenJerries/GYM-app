@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>GYM MASTER - Gym Management System</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<!-- TOAST CONTAINER -->
+<div id="toast-container"></div>
+
+<!-- CONFIRMATION MODAL -->
+<div id="confirm-modal" class="modal-overlay" style="display:none">
+  <div class="modal-card confirm-card">
+    <div class="confirm-icon" id="confirm-icon"></div>
+    <h3 id="confirm-title">Are you sure?</h3>
+    <p id="confirm-message">This action cannot be undone.</p>
+    <div class="confirm-actions">
+      <button class="btn btn-secondary" onclick="closeConfirm()">Cancel</button>
+      <button class="btn btn-danger" id="confirm-btn" onclick="">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== LOGIN SCREEN ===================== -->
+<div id="login-screen" class="login-screen">
+  <div class="login-bg"></div>
+  <div class="login-card">
+    <div class="login-logo">🏋️</div>
+    <h1 class="login-title">GYM MASTER</h1>
+    <p class="login-subtitle">Simple Gym Management</p>
+    <form id="login-form" onsubmit="return handleLogin(event)">
+      <div class="form-group">
+        <label>Phone / Email</label>
+        <input type="text" id="login-email" placeholder="Enter phone or email" value="admin@gym.com">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="login-password" placeholder="Enter password" value="demo123">
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">LOGIN</button>
+    </form>
+    <div class="demo-badge">⚡ Demo Mode — Click Login to enter</div>
+  </div>
+</div>
+
+<!-- ===================== MAIN APP ===================== -->
+<div id="app" class="app-container" style="display:none">
+
+  <!-- SIDEBAR -->
+  <aside id="sidebar" class="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-logo">🏋️</span>
+      <span class="sidebar-brand">GYM MASTER</span>
+      <button class="sidebar-close" onclick="toggleSidebar()">✕</button>
+    </div>
+    <nav class="sidebar-nav">
+      <a class="nav-item active" data-page="dashboard" onclick="navigateTo('dashboard')">
+        <span class="nav-icon">🏠</span><span>Dashboard</span>
+      </a>
+      <a class="nav-item" data-page="members" onclick="navigateTo('members')">
+        <span class="nav-icon">👥</span><span>Members</span>
+      </a>
+      <a class="nav-item" data-page="plans" onclick="navigateTo('plans')">
+        <span class="nav-icon">💳</span><span>Plans</span>
+      </a>
+      <a class="nav-item" data-page="offers" onclick="navigateTo('offers')">
+        <span class="nav-icon">🎁</span><span>Offers</span>
+      </a>
+      <a class="nav-item" data-page="payments" onclick="navigateTo('payments')">
+        <span class="nav-icon">💰</span><span>Payments</span>
+      </a>
+      <a class="nav-item" data-page="reports" onclick="navigateTo('reports')">
+        <span class="nav-icon">📊</span><span>Reports</span>
+      </a>
+      <a class="nav-item" data-page="settings" onclick="navigateTo('settings')">
+        <span class="nav-icon">⚙️</span><span>Settings</span>
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <button class="btn btn-primary btn-add-member-sidebar" onclick="openAddMember()">➕ Add Member</button>
+    </div>
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <main class="main-content">
+    <!-- TOP BAR -->
+    <header class="topbar">
+      <button class="hamburger" onclick="toggleSidebar()">☰</button>
+      <div class="topbar-search">
+        <span class="search-icon">🔎</span>
+        <input type="text" id="global-search" placeholder="Search members by name, phone or ID..." oninput="handleGlobalSearch(this.value)">
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-primary btn-add-desktop" onclick="openAddMember()">➕ Add Member</button>
+        <div class="topbar-user">Master 👋</div>
+      </div>
+    </header>
+
+    <!-- PAGES -->
+    <div id="page-dashboard" class="page active"></div>
+    <div id="page-members" class="page" style="display:none"></div>
+    <div id="page-member-profile" class="page" style="display:none"></div>
+    <div id="page-plans" class="page" style="display:none"></div>
+    <div id="page-offers" class="page" style="display:none"></div>
+    <div id="page-payments" class="page" style="display:none"></div>
+    <div id="page-reports" class="page" style="display:none"></div>
+    <div id="page-settings" class="page" style="display:none"></div>
+  </main>
+
+  <!-- BOTTOM NAV (mobile) -->
+  <nav class="bottom-nav">
+    <a class="bnav-item active" data-page="dashboard" onclick="navigateTo('dashboard')"><span>🏠</span><small>Home</small></a>
+    <a class="bnav-item" data-page="members" onclick="navigateTo('members')"><span>👥</span><small>Members</small></a>
+    <a class="bnav-item bnav-add" onclick="openAddMember()"><span class="bnav-add-icon">➕</span></a>
+    <a class="bnav-item" data-page="payments" onclick="navigateTo('payments')"><span>💰</span><small>Payments</small></a>
+    <a class="bnav-item" data-page="settings" onclick="navigateTo('settings')"><span>⚙️</span><small>More</small></a>
+  </nav>
+</div>
+
+<!-- ===================== MODALS ===================== -->
+
+<!-- ADD MEMBER MODAL -->
+<div id="modal-add-member" class="modal-overlay" style="display:none">
+  <div class="modal-card modal-lg">
+    <div class="modal-header">
+      <h2>Add New Member</h2>
+      <button class="modal-close" onclick="closeModal('modal-add-member')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="duplicate-alert" class="duplicate-alert" style="display:none"></div>
+      <form id="add-member-form" onsubmit="return handleAddMember(event)">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Full Name *</label>
+            <input type="text" id="am-name" required placeholder="e.g. Arun Kumar">
+          </div>
+          <div class="form-group">
+            <label>Phone Number *</label>
+            <input type="tel" id="am-phone" required placeholder="e.g. 9876543210" oninput="checkDuplicate('phone', this.value)">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>WhatsApp Number</label>
+            <input type="tel" id="am-whatsapp" placeholder="Same as phone if blank">
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="am-email" placeholder="Optional">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Date of Birth</label>
+            <input type="date" id="am-dob">
+          </div>
+          <div class="form-group">
+            <label>Gender</label>
+            <select id="am-gender">
+              <option value="">Select</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Registration Date</label>
+          <input type="date" id="am-regdate">
+        </div>
+        <div class="form-group">
+          <label>Fitness Goal * (select one or more)</label>
+          <div class="goal-chips" id="am-goals">
+            <label class="chip"><input type="checkbox" value="Competition Training">🏆 Competition</label>
+            <label class="chip"><input type="checkbox" value="Weight Loss">⚖️ Weight Loss</label>
+            <label class="chip"><input type="checkbox" value="Weight Gain">💪 Weight Gain</label>
+            <label class="chip"><input type="checkbox" value="Strength Training">🏋️ Strength</label>
+            <label class="chip"><input type="checkbox" value="Muscle Building">💪 Muscle</label>
+            <label class="chip"><input type="checkbox" value="Fat Loss">🔥 Fat Loss</label>
+            <label class="chip"><input type="checkbox" value="General Fitness">🧘 General</label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Emergency Contact</label>
+          <input type="text" id="am-emergency" placeholder="Name & Phone">
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <textarea id="am-notes" rows="2" placeholder="Any additional notes..."></textarea>
+        </div>
+
+        <h3 class="section-title">Select Membership Plan</h3>
+        <div id="am-plans" class="plans-grid"></div>
+
+        <h3 class="section-title" id="am-offers-title">🎁 Available Offers</h3>
+        <div id="am-offers" class="offers-grid"></div>
+
+        <div id="am-pricing" class="pricing-summary" style="display:none">
+          <div class="pricing-row"><span>Plan Price</span><span id="am-price">₹0</span></div>
+          <div class="pricing-row discount" id="am-discount-row" style="display:none"><span>Offer Discount</span><span id="am-discount">-₹0</span></div>
+          <div class="pricing-row total"><span>Final Amount</span><span id="am-final">₹0</span></div>
+        </div>
+
+        <h3 class="section-title">Payment</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Amount Paid *</label>
+            <input type="number" id="am-paid" required placeholder="0" min="0">
+          </div>
+          <div class="form-group">
+            <label>Payment Method</label>
+            <select id="am-method">
+              <option value="Cash">Cash</option>
+              <option value="UPI">UPI</option>
+              <option value="Card">Card</option>
+              <option value="Bank Transfer">Bank Transfer</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-add-member')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Member</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- RENEW MODAL -->
+<div id="modal-renew" class="modal-overlay" style="display:none">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2>Renew Membership</h2>
+      <button class="modal-close" onclick="closeModal('modal-renew')">✕</button>
+    </div>
+    <div class="modal-body" id="renew-body"></div>
+  </div>
+</div>
+
+<!-- PAYMENT MODAL -->
+<div id="modal-payment" class="modal-overlay" style="display:none">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2>Record Payment</h2>
+      <button class="modal-close" onclick="closeModal('modal-payment')">✕</button>
+    </div>
+    <div class="modal-body" id="payment-body"></div>
+  </div>
+</div>
+
+<!-- FREEZE MODAL -->
+<div id="modal-freeze" class="modal-overlay" style="display:none">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2>⏸ Freeze Membership</h2>
+      <button class="modal-close" onclick="closeModal('modal-freeze')">✕</button>
+    </div>
+    <div class="modal-body" id="freeze-body"></div>
+  </div>
+</div>
+
+<!-- PLAN MODAL -->
+<div id="modal-plan" class="modal-overlay" style="display:none">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2 id="plan-modal-title">Add Plan</h2>
+      <button class="modal-close" onclick="closeModal('modal-plan')">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="plan-form" onsubmit="return handleSavePlan(event)">
+        <div class="form-group">
+          <label>Plan Name *</label>
+          <input type="text" id="pl-name" required placeholder="e.g. 3 Months">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Duration *</label>
+            <input type="number" id="pl-duration" required min="1" placeholder="e.g. 3">
+          </div>
+          <div class="form-group">
+            <label>Unit</label>
+            <select id="pl-unit">
+              <option value="Months">Months</option>
+              <option value="Days">Days</option>
+              <option value="Years">Years</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Price (₹) *</label>
+          <input type="number" id="pl-price" required min="0" placeholder="e.g. 3000">
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <input type="text" id="pl-desc" placeholder="Optional description">
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-plan')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Plan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- OFFER MODAL -->
+<div id="modal-offer" class="modal-overlay" style="display:none">
+  <div class="modal-card modal-lg">
+    <div class="modal-header">
+      <h2 id="offer-modal-title">Create Offer</h2>
+      <button class="modal-close" onclick="closeModal('modal-offer')">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="offer-form" onsubmit="return handleSaveOffer(event)">
+        <div class="form-group">
+          <label>Offer Name *</label>
+          <input type="text" id="of-name" required placeholder="e.g. Festival Offer">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Offer Type *</label>
+            <select id="of-type" onchange="toggleOfferFields()">
+              <option value="percentage">Percentage Discount</option>
+              <option value="fixed">Fixed Discount (₹)</option>
+              <option value="1plus1">1+1</option>
+              <option value="family">Family Discount</option>
+            </select>
+          </div>
+          <div class="form-group" id="of-value-group">
+            <label id="of-value-label">Discount %</label>
+            <input type="number" id="of-value" min="0" placeholder="e.g. 20">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Applicable Plans</label>
+          <div id="of-plans" class="goal-chips"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Start Date *</label>
+            <input type="date" id="of-start" required>
+          </div>
+          <div class="form-group">
+            <label>End Date *</label>
+            <input type="date" id="of-end" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <input type="text" id="of-desc" placeholder="Optional description">
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-offer')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Offer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- REPORT PDF MODAL -->
+<div id="modal-report-preview" class="modal-overlay" style="display:none">
+  <div class="modal-card modal-lg">
+    <div class="modal-header">
+      <h2>📄 Report Preview</h2>
+      <button class="modal-close" onclick="closeModal('modal-report-preview')">✕</button>
+    </div>
+    <div class="modal-body" id="report-preview-body"></div>
+  </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>

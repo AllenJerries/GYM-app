@@ -1,0 +1,1641 @@
+// ======================== DATA LAYER ========================
+const STORAGE_KEY = 'gymmaster_data';
+let DB = { members: [], plans: [], offers: [], payments: [], settings: {} };
+
+function saveDB() { localStorage.setItem(STORAGE_KEY, JSON.stringify(DB)); }
+function loadDB() {
+  const d = localStorage.getItem(STORAGE_KEY);
+  if (d) { DB = JSON.parse(d); return true; }
+  return false;
+}
+function resetDB() { localStorage.removeItem(STORAGE_KEY); DB = { members: [], plans: [], offers: [], payments: [], settings: {} }; }
+
+// ======================== UTILITIES ========================
+function genId(prefix) {
+  const n = Math.floor(Math.random() * 900000) + 100000;
+  return prefix + '-' + n;
+}
+function normalizePhone(p) {
+  if (!p) return '';
+  return p.replace(/[\s\-\(\)\+]/g, '').replace(/^91/, '');
+}
+function fmtDate(d) {
+  if (!d) return '—';
+  const dt = new Date(d);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return dt.getDate() + ' ' + months[dt.getMonth()] + ' ' + dt.getFullYear();
+}
+function fmtMoney(n) {
+  return '₹' + Number(n || 0).toLocaleString('en-IN');
+}
+function today() { return new Date().toISOString().split('T')[0]; }
+function daysBetween(a, b) {
+  const da = new Date(a), db = new Date(b);
+  return Math.ceil((db - da) / (1000 * 60 * 60 * 24));
+}
+function addDuration(dateStr, amount, unit) {
+  const d = new Date(dateStr);
+  if (unit === 'Days') d.setDate(d.getDate() + amount);
+  else if (unit === 'Months') d.setMonth(d.getMonth() + amount);
+  else if (unit === 'Years') d.setFullYear(d.getFullYear() + amount);
+  return d.toISOString().split('T')[0];
+}
+function getExpiryStatus(expiryDate) {
+  const t = new Date(); t.setHours(0,0,0,0);
+  const e = new Date(expiryDate); e.setHours(0,0,0,0);
+  const diff = Math.ceil((e - t) / (1000*60*60*24));
+  if (diff < 0) return 'expired';
+  if (diff === 0) return 'expiring-today';
+  if (diff <= 3) return 'expiring-3';
+  if (diff <= 7) return 'expiring-7';
+  return 'active';
+}
+function getStatusLabel(s) {
+  const map = { 'active':'🟢 Active', 'expiring-today':'🔴 Expiring Today', 'expiring-3':'🟠 Expiring in 3 Days', 'expiring-7':'🟠 Expiring in 7 Days', 'expired':'🔴 Expired', 'stopped':'⚫ Stopped', 'pending':'🟡 Pending Payment' };
+  return map[s] || s;
+}
+function getStatusClass(s) {
+  if (s === 'active') return 'status-active';
+  if (s.includes('expiring')) return 'status-expiring';
+  if (s === 'expired') return 'status-expired';
+  if (s === 'pending') return 'status-pending';
+  if (s === 'stopped') return 'status-stopped';
+  return 'status-active';
+}
+function memberInitials(name) {
+  return name.split(' ').map(w => w[0]).join('').substring(0,2).toUpperCase();
+}
+function getGreeting() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good Morning';
+  if (h < 17) return 'Good Afternoon';
+  return 'Good Evening';
+}
+
+// ======================== TOAST / CONFIRM ========================
+function showToast(msg, type) {
+  const c = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  t.className = 'toast ' + (type || '');
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+let confirmCb = null;
+function showConfirm(title, msg, btnText, icon, cb) {
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-message').textContent = msg;
+  document.getElementById('confirm-btn').textContent = btnText || 'Confirm';
+  document.getElementById('confirm-icon').textContent = icon || '⚠️';
+  confirmCb = cb;
+  document.getElementById('confirm-btn').onclick = function() { closeConfirm(); if (confirmCb) confirmCb(); };
+  document.getElementById('confirm-modal').style.display = 'flex';
+}
+function closeConfirm() { document.getElementById('confirm-modal').style.display = 'none'; confirmCb = null; }
+
+// ======================== MODALS ========================
+function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+// ======================== LOGIN ========================
+function handleLogin(e) {
+  e.preventDefault();
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  renderDashboard();
+  return false;
+}
+
+// ======================== NAVIGATION ========================
+let currentPage = 'dashboard';
+function navigateTo(page, data) {
+  currentPage = page;
+  document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.bnav-item').forEach(n => n.classList.remove('active'));
+
+  const pg = document.getElementById('page-' + page);
+  if (pg) { pg.style.display = 'block'; pg.scrollTop = 0; }
+
+  document.querySelectorAll(`[data-page="${page}"]`).forEach(n => n.classList.add('active'));
+
+  if (page === 'dashboard') renderDashboard();
+  else if (page === 'members') renderMembers(data);
+  else if (page === 'member-profile') renderMemberProfile(data);
+  else if (page === 'plans') renderPlans();
+  else if (page === 'offers') renderOffers();
+  else if (page === 'payments') renderPayments();
+  else if (page === 'reports') renderReports();
+  else if (page === 'settings') renderSettings();
+
+  // Close sidebar on mobile
+  document.getElementById('sidebar').classList.remove('open');
+}
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+}
+
+// ======================== DASHBOARD ========================
+function renderDashboard() {
+  const members = DB.members;
+  const todayStr = today();
+
+  // Calculate expiry stats
+  let expired = 0, expToday = 0, exp3 = 0, exp7 = 0;
+  let activeCount = 0;
+  const followups = [];
+
+  members.forEach(m => {
+    const mem = getActiveMembership(m);
+    if (!mem) return;
+    const st = getExpiryStatus(mem.expiryDate);
+    if (st === 'expired') { expired++; followups.push({ member: m, membership: mem, type: 'expired' }); }
+    else if (st === 'expiring-today') { expToday++; followups.push({ member: m, membership: mem, type: 'today' }); }
+    else if (st === 'expiring-3') { exp3++; followups.push({ member: m, membership: mem, type: '3days' }); }
+    else if (st === 'expiring-7') { exp7++; }
+    else activeCount++;
+  });
+
+  const thisMonth = DB.payments.filter(p => {
+    const pd = new Date(p.date);
+    const now = new Date();
+    return pd.getMonth() === now.getMonth() && pd.getFullYear() === now.getFullYear();
+  });
+  const todayPayments = DB.payments.filter(p => p.date === todayStr);
+  const todayCollection = todayPayments.reduce((s, p) => s + (p.amount || 0), 0);
+  const monthlyRevenue = thisMonth.reduce((s, p) => s + (p.amount || 0), 0);
+  const pendingPayments = DB.payments.filter(p => p.status === 'pending' || p.status === 'partial');
+  const pendingAmount = pendingPayments.reduce((s, p) => s + (p.pendingAmount || 0), 0);
+
+  const newThisMonth = members.filter(m => {
+    const rd = new Date(m.registrationDate);
+    const now = new Date();
+    return rd.getMonth() === now.getMonth() && rd.getFullYear() === now.getFullYear();
+  }).length;
+
+  const renewalsThisMonth = thisMonth.filter(p => p.type === 'renewal').length;
+
+  let html = `
+    <div class="dash-greeting">
+      <h1>${getGreeting()}, Master 👋</h1>
+      <p>Here's what needs your attention today.</p>
+    </div>
+
+    <div class="section-title">⚠️ Membership Status</div>
+    <div class="expiry-grid">
+      <div class="expiry-card red" onclick="navigateTo('members','expired')">
+        <div class="ec-label">🔴 Expired</div>
+        <div class="ec-count">${expired}</div>
+      </div>
+      <div class="expiry-card red" onclick="navigateTo('members','expiring-today')">
+        <div class="ec-label">🔴 Expiring Today</div>
+        <div class="ec-count">${expToday}</div>
+      </div>
+      <div class="expiry-card orange" onclick="navigateTo('members','expiring-3')">
+        <div class="ec-label">🟠 Expiring in 3 Days</div>
+        <div class="ec-count">${exp3}</div>
+      </div>
+      <div class="expiry-card yellow" onclick="navigateTo('members','expiring-7')">
+        <div class="ec-label">🟡 Expiring in 7 Days</div>
+        <div class="ec-count">${exp7}</div>
+      </div>
+    </div>
+
+    <div class="section-title">📊 Overview</div>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="sc-label">Total Members</div><div class="sc-value">${members.length}</div></div>
+      <div class="stat-card green"><div class="sc-label">Active Members</div><div class="sc-value">${activeCount}</div></div>
+      <div class="stat-card"><div class="sc-label">New This Month</div><div class="sc-value">${newThisMonth}</div></div>
+      <div class="stat-card"><div class="sc-label">Renewals This Month</div><div class="sc-value">${renewalsThisMonth}</div></div>
+      <div class="stat-card green"><div class="sc-label">Today's Collection</div><div class="sc-value">${fmtMoney(todayCollection)}</div></div>
+      <div class="stat-card green"><div class="sc-label">Monthly Revenue</div><div class="sc-value">${fmtMoney(monthlyRevenue)}</div></div>
+      <div class="stat-card red"><div class="sc-label">Pending Payments</div><div class="sc-value">${fmtMoney(pendingAmount)}</div></div>
+    </div>
+
+    <div class="section-title">⚡ Quick Actions</div>
+    <div class="quick-actions">
+      <button class="qa-btn" onclick="openAddMember()"><span>➕</span> Add Member</button>
+      <button class="qa-btn" onclick="quickRenew()"><span>🔄</span> Renew Membership</button>
+      <button class="qa-btn" onclick="quickPayment()"><span>💰</span> Record Payment</button>
+      <button class="qa-btn" onclick="navigateTo('offers')"><span>🎁</span> Manage Offers</button>
+      <button class="qa-btn" onclick="navigateTo('reports')"><span>📊</span> Reports</button>
+    </div>
+  `;
+
+  // Follow-up section
+  if (followups.length > 0) {
+    html += `<div class="section-title">📞 Today's Follow-Up</div><div class="followup-list">`;
+    followups.slice(0, 6).forEach(f => {
+      const det = f.type === 'today' ? 'Expires Today' :
+                  f.type === 'expired' ? `Expired ${Math.abs(daysBetween(f.membership.expiryDate, today()))} days ago` :
+                  `Expires in ${daysBetween(today(), f.membership.expiryDate)} days`;
+      const plan = DB.plans.find(p => p.id === f.membership.planId);
+      const phone = normalizePhone(f.member.phone);
+      const msg = encodeURIComponent(`Hi ${f.member.name}, this is a reminder from GYM MASTER. Your gym membership ${f.type === 'expired' ? 'has expired' : 'is expiring soon'}. Please visit the gym to renew. Thank you!`);
+      html += `
+        <div class="followup-card">
+          <div class="fu-avatar">${memberInitials(f.member.name)}</div>
+          <div class="fu-info">
+            <div class="fu-name">${f.member.name}</div>
+            <div class="fu-detail">${det} — ${plan ? plan.name : 'N/A'}</div>
+          </div>
+          <div class="fu-actions">
+            <button class="btn btn-sm btn-secondary" onclick="navigateTo('member-profile','${f.member.id}')">View</button>
+            <a class="btn btn-sm btn-success" href="https://wa.me/91${phone}?text=${msg}" target="_blank">WhatsApp</a>
+            <button class="btn btn-sm btn-primary" onclick="openRenew('${f.member.id}')">Renew</button>
+          </div>
+        </div>`;
+    });
+    html += '</div>';
+  }
+
+  document.getElementById('page-dashboard').innerHTML = html;
+}
+
+// ======================== MEMBER HELPERS ========================
+function getActiveMembership(member) {
+  if (!member.memberships || member.memberships.length === 0) return null;
+  const sorted = [...member.memberships].sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
+  return sorted[0];
+}
+function getMemberStatus(member) {
+  if (member.status === 'stopped') return 'stopped';
+  const mem = getActiveMembership(member);
+  if (!mem) return 'pending';
+  if (mem.paymentStatus === 'pending' || mem.paymentStatus === 'partial') return 'pending';
+  return getExpiryStatus(mem.expiryDate);
+}
+
+// ======================== MEMBERS PAGE ========================
+let membersFilter = 'all';
+function renderMembers(filter) {
+  if (filter) membersFilter = filter;
+  const searchVal = document.getElementById('global-search')?.value || '';
+  let members = [...DB.members];
+
+  // Filter
+  if (membersFilter !== 'all') {
+    members = members.filter(m => getMemberStatus(m) === membersFilter);
+  }
+
+  // Search
+  if (searchVal) {
+    const q = searchVal.toLowerCase();
+    members = members.filter(m =>
+      m.name.toLowerCase().includes(q) ||
+      normalizePhone(m.phone).includes(normalizePhone(q)) ||
+      (m.id && m.id.toLowerCase().includes(q))
+    );
+  }
+
+  const counts = { all: DB.members.length, active: 0, 'expiring-3': 0, expired: 0, stopped: 0, pending: 0 };
+  DB.members.forEach(m => { const s = getMemberStatus(m); if (counts[s] !== undefined) counts[s]++; });
+
+  let html = `
+    <div class="members-header">
+      <h2>Members (${members.length})</h2>
+      <div class="filter-tabs">
+        <button class="filter-tab ${membersFilter==='all'?'active':''}" onclick="renderMembers('all')">All (${counts.all})</button>
+        <button class="filter-tab ${membersFilter==='active'?'active':''}" onclick="renderMembers('active')">Active (${counts.active})</button>
+        <button class="filter-tab ${membersFilter==='expiring-3'?'active':''}" onclick="renderMembers('expiring-3')">Expiring (${counts['expiring-3']})</button>
+        <button class="filter-tab ${membersFilter==='expired'?'active':''}" onclick="renderMembers('expired')">Expired (${counts.expired})</button>
+        <button class="filter-tab ${membersFilter==='stopped'?'active':''}" onclick="renderMembers('stopped')">Stopped (${counts.stopped})</button>
+        <button class="filter-tab ${membersFilter==='pending'?'active':''}" onclick="renderMembers('pending')">Pending (${counts.pending})</button>
+      </div>
+    </div>
+  `;
+
+  if (members.length === 0) {
+    html += '<div class="empty-state"><div class="es-icon">👥</div><div class="es-text">No members found</div><div class="es-sub">Try adjusting your filters or add a new member.</div></div>';
+    document.getElementById('page-members').innerHTML = html;
+    return;
+  }
+
+  // Desktop table
+  html += '<div class="table-wrapper"><table class="member-table"><thead><tr><th>Member</th><th>Phone</th><th>Goal</th><th>Plan</th><th>Expiry</th><th>Payment</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+  members.forEach(m => {
+    const mem = getActiveMembership(m);
+    const st = getMemberStatus(m);
+    const plan = mem ? DB.plans.find(p => p.id === mem.planId) : null;
+    html += `<tr>
+      <td><div class="member-cell"><div class="member-avatar">${memberInitials(m.name)}</div><div><div class="member-name">${m.name}</div><div class="member-id">${m.id}</div></div></div></td>
+      <td>${m.phone}</td>
+      <td>${(m.goals||[])[0] || '—'}</td>
+      <td>${plan ? plan.name : '—'}</td>
+      <td>${mem ? fmtDate(mem.expiryDate) : '—'}</td>
+      <td><span class="status-badge ${mem && mem.paymentStatus === 'paid' ? 'status-active' : 'status-pending'}">${mem ? mem.paymentStatus : '—'}</span></td>
+      <td><span class="status-badge ${getStatusClass(st)}">${getStatusLabel(st)}</span></td>
+      <td><div style="display:flex;gap:4px"><button class="btn btn-sm btn-secondary" onclick="navigateTo('member-profile','${m.id}')">View</button><button class="btn btn-sm btn-primary" onclick="openRenew('${m.id}')">Renew</button></div></td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+
+  // Mobile cards
+  html += '<div class="member-cards">';
+  members.forEach(m => {
+    const mem = getActiveMembership(m);
+    const st = getMemberStatus(m);
+    const plan = mem ? DB.plans.find(p => p.id === mem.planId) : null;
+    html += `
+      <div class="member-card">
+        <div class="mc-header">
+          <div class="fu-avatar">${memberInitials(m.name)}</div>
+          <div class="mc-info">
+            <div class="mc-name">${m.name}</div>
+            <div class="mc-id">${m.id}</div>
+          </div>
+          <span class="status-badge ${getStatusClass(st)}">${getStatusLabel(st)}</span>
+        </div>
+        <div class="mc-details">
+          <div>📱 ${m.phone}</div>
+          <div>🏋️ ${(m.goals||[])[0] || '—'}</div>
+          <div>💳 ${plan ? plan.name : '—'}</div>
+          <div>📅 ${mem ? fmtDate(mem.expiryDate) : '—'}</div>
+        </div>
+        <div class="mc-actions">
+          <button class="btn btn-sm btn-secondary" onclick="navigateTo('member-profile','${m.id}')">VIEW</button>
+          <button class="btn btn-sm btn-primary" onclick="openRenew('${m.id}')">RENEW</button>
+        </div>
+      </div>`;
+  });
+  html += '</div>';
+
+  document.getElementById('page-members').innerHTML = html;
+}
+
+// ======================== MEMBER PROFILE ========================
+function renderMemberProfile(memberId) {
+  const m = DB.members.find(x => x.id === memberId);
+  if (!m) { navigateTo('members'); return; }
+  const mem = getActiveMembership(m);
+  const st = getMemberStatus(m);
+  const plan = mem ? DB.plans.find(p => p.id === mem.planId) : null;
+  const offer = mem && mem.offerId ? DB.offers.find(o => o.id === mem.offerId) : null;
+  const daysLeft = mem ? daysBetween(today(), mem.expiryDate) : null;
+
+  let html = `
+    <button class="btn btn-secondary" onclick="navigateTo('members')" style="margin-bottom:16px">← Back to Members</button>
+    <div class="profile-header">
+      <div class="profile-avatar">${memberInitials(m.name)}</div>
+      <div class="profile-info">
+        <h2>${m.name}</h2>
+        <div class="pid">${m.id}</div>
+        <div class="profile-meta">
+          <div class="profile-meta-item">📱 <strong>${m.phone}</strong></div>
+          ${m.whatsapp ? `<div class="profile-meta-item">💬 <strong>${m.whatsapp}</strong></div>` : ''}
+          <div class="profile-meta-item">📅 Joined <strong>${fmtDate(m.registrationDate)}</strong></div>
+          <div class="profile-meta-item">🏋️ <strong>${(m.goals||[]).join(', ') || 'Not set'}</strong></div>
+        </div>
+      </div>
+      <div class="profile-actions">
+        <button class="btn btn-primary" onclick="openRenew('${m.id}')">🔄 Renew</button>
+        <button class="btn btn-outline" onclick="openFreeze('${m.id}')">⏸ Freeze</button>
+        <button class="btn btn-secondary" onclick="stopMember('${m.id}')">⏹ Stop</button>
+      </div>
+    </div>
+
+    <div class="profile-grid">
+      <div class="profile-card">
+        <h3>📋 Current Membership</h3>
+        ${mem ? `
+          <div class="pc-row"><span>Plan</span><span>${plan ? plan.name : '—'}</span></div>
+          <div class="pc-row"><span>Start Date</span><span>${fmtDate(mem.startDate)}</span></div>
+          <div class="pc-row"><span>Expiry Date</span><span>${fmtDate(mem.expiryDate)}</span></div>
+          <div class="pc-row"><span>Days ${daysLeft >= 0 ? 'Remaining' : 'Expired'}</span><span style="color:${daysLeft >= 0 ? 'var(--green)' : 'var(--red)'}">${Math.abs(daysLeft)} days</span></div>
+          <div class="pc-row"><span>Price</span><span>${fmtMoney(mem.finalPrice)}</span></div>
+          ${mem.originalPrice !== mem.finalPrice ? `<div class="pc-row"><span>Original Price</span><span style="text-decoration:line-through;color:var(--gray-400)">${fmtMoney(mem.originalPrice)}</span></div>
+          <div class="pc-row"><span>Discount</span><span style="color:var(--green)">-${fmtMoney(mem.originalPrice - mem.finalPrice)}</span></div>` : ''}
+          <div class="pc-row"><span>Payment Status</span><span class="status-badge ${mem.paymentStatus === 'paid' ? 'status-active' : 'status-pending'}">${mem.paymentStatus}</span></div>
+          ${offer ? `<div class="pc-row"><span>Offer Applied</span><span>${offer.name}</span></div>` : ''}
+        ` : '<div class="empty-state"><div class="es-text">No active membership</div></div>'}
+      </div>
+
+      <div class="profile-card">
+        <h3>👤 Personal Details</h3>
+        <div class="pc-row"><span>Gender</span><span>${m.gender || '—'}</span></div>
+        <div class="pc-row"><span>Date of Birth</span><span>${m.dob ? fmtDate(m.dob) : '—'}</span></div>
+        <div class="pc-row"><span>Emergency Contact</span><span>${m.emergency || '—'}</span></div>
+        <div class="pc-row"><span>Notes</span><span>${m.notes || '—'}</span></div>
+        ${m.familyGroupId ? `<div class="pc-row"><span>Family Group</span><span>${m.familyGroupId}</span></div>` : ''}
+      </div>
+    </div>
+
+    <div class="profile-card" style="background:var(--white);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow-sm)">
+      <h3>📜 Membership History</h3>
+      ${m.memberships && m.memberships.length > 0 ? `
+        <table class="history-table">
+          <thead><tr><th>Plan</th><th>Price</th><th>Period</th><th>Payment</th><th>Status</th></tr></thead>
+          <tbody>
+            ${[...m.memberships].sort((a,b) => new Date(b.startDate) - new Date(a.startDate)).map(mem2 => {
+              const plan2 = DB.plans.find(p => p.id === mem2.planId);
+              const st2 = mem2.status === 'stopped' ? 'stopped' : getExpiryStatus(mem2.expiryDate);
+              return `<tr>
+                <td><strong>${plan2 ? plan2.name : '—'}</strong></td>
+                <td>${fmtMoney(mem2.finalPrice)}</td>
+                <td>${fmtDate(mem2.startDate)} → ${fmtDate(mem2.expiryDate)}</td>
+                <td><span class="status-badge ${mem2.paymentStatus === 'paid' ? 'status-active' : 'status-pending'}">${mem2.paymentStatus}</span></td>
+                <td><span class="status-badge ${getStatusClass(st2)}">${getStatusLabel(st2)}</span></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      ` : '<div class="empty-state"><div class="es-icon">📜</div><div class="es-text">No membership history</div></div>'}
+    </div>
+  `;
+
+  document.getElementById('page-member-profile').innerHTML = html;
+  document.getElementById('page-member-profile').style.display = 'block';
+}
+
+// ======================== PLANS PAGE ========================
+let editingPlanId = null;
+function renderPlans() {
+  let html = `
+    <div class="members-header">
+      <h2>Membership Plans</h2>
+      <button class="btn btn-primary" onclick="openPlanModal()">➕ Add Plan</button>
+    </div>
+    <div class="plans-grid-display">
+  `;
+  DB.plans.forEach(p => {
+    html += `
+      <div class="plan-card-display">
+        <div class="plan-name">${p.name}</div>
+        <div class="plan-price">${fmtMoney(p.price)}</div>
+        <div class="plan-duration">${p.duration} ${p.unit}</div>
+        <div class="plan-desc">${p.description || ''}</div>
+        <div class="plan-actions">
+          <button class="btn btn-sm btn-secondary" onclick="openPlanModal('${p.id}')">Edit</button>
+          <button class="btn btn-sm btn-danger" onclick="deletePlan('${p.id}')">Delete</button>
+        </div>
+      </div>`;
+  });
+  html += '</div>';
+  document.getElementById('page-plans').innerHTML = html;
+}
+function openPlanModal(id) {
+  editingPlanId = id || null;
+  document.getElementById('plan-modal-title').textContent = id ? 'Edit Plan' : 'Add Plan';
+  if (id) {
+    const p = DB.plans.find(x => x.id === id);
+    document.getElementById('pl-name').value = p.name;
+    document.getElementById('pl-duration').value = p.duration;
+    document.getElementById('pl-unit').value = p.unit;
+    document.getElementById('pl-price').value = p.price;
+    document.getElementById('pl-desc').value = p.description || '';
+  } else {
+    document.getElementById('plan-form').reset();
+  }
+  openModal('modal-plan');
+}
+function handleSavePlan(e) {
+  e.preventDefault();
+  const data = {
+    name: document.getElementById('pl-name').value.trim(),
+    duration: parseInt(document.getElementById('pl-duration').value),
+    unit: document.getElementById('pl-unit').value,
+    price: parseInt(document.getElementById('pl-price').value),
+    description: document.getElementById('pl-desc').value.trim()
+  };
+  if (editingPlanId) {
+    const idx = DB.plans.findIndex(p => p.id === editingPlanId);
+    if (idx >= 0) Object.assign(DB.plans[idx], data);
+    showToast('Plan updated successfully', 'success');
+  } else {
+    data.id = genId('PL');
+    data.active = true;
+    DB.plans.push(data);
+    showToast('Plan created successfully', 'success');
+  }
+  saveDB();
+  closeModal('modal-plan');
+  renderPlans();
+  return false;
+}
+function deletePlan(id) {
+  showConfirm('Delete Plan?', 'This plan will be removed. Members using this plan won\'t be affected.', 'Delete', '🗑️', () => {
+    DB.plans = DB.plans.filter(p => p.id !== id);
+    saveDB();
+    renderPlans();
+    showToast('Plan deleted');
+  });
+}
+
+// ======================== OFFERS PAGE ========================
+let editingOfferId = null;
+function renderOffers() {
+  let html = `
+    <div class="members-header">
+      <h2>Offers</h2>
+      <button class="btn btn-primary" onclick="openOfferModal()">➕ Create Offer</button>
+    </div>
+    <div class="offers-grid-display">
+  `;
+  if (DB.offers.length === 0) {
+    html += '<div class="empty-state"><div class="es-icon">🎁</div><div class="es-text">No offers yet</div><div class="es-sub">Create your first offer to attract more members.</div></div>';
+  }
+  DB.offers.forEach(o => {
+    const now = new Date();
+    const start = new Date(o.startDate);
+    const end = new Date(o.endDate);
+    const isActive = now >= start && now <= end;
+    const typeLabels = { percentage: 'Percentage Discount', fixed: 'Fixed Discount', '1plus1': '1+1', family: 'Family Discount' };
+    const valText = o.type === 'percentage' ? o.value + '% OFF' : o.type === 'fixed' ? fmtMoney(o.value) + ' OFF' : o.type === '1plus1' ? 'Buy 1 Get 1' : fmtMoney(o.value) + ' Family';
+
+    html += `
+      <div class="offer-card-display">
+        <span class="offer-type-badge">${typeLabels[o.type] || o.type}</span>
+        <div class="offer-name">${o.name}</div>
+        <div class="offer-desc">${o.description || ''}</div>
+        <div class="offer-meta">
+          <div>💰 ${valText}</div>
+          <div>📅 ${fmtDate(o.startDate)} → ${fmtDate(o.endDate)}</div>
+          <div>📋 Plans: ${(o.planIds||[]).map(pid => { const pp = DB.plans.find(p => p.id === pid); return pp ? pp.name : ''; }).join(', ') || 'All'}</div>
+          <div>Status: <span class="status-badge ${isActive ? 'status-active' : 'status-expired'}">${isActive ? '🟢 Active' : '🔴 Inactive'}</span></div>
+        </div>
+        <div class="offer-actions">
+          <button class="btn btn-sm btn-secondary" onclick="openOfferModal('${o.id}')">Edit</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteOffer('${o.id}')">Delete</button>
+        </div>
+      </div>`;
+  });
+  html += '</div>';
+  document.getElementById('page-offers').innerHTML = html;
+}
+function openOfferModal(id) {
+  editingOfferId = id || null;
+  document.getElementById('offer-modal-title').textContent = id ? 'Edit Offer' : 'Create Offer';
+  const planChips = document.getElementById('of-plans');
+  planChips.innerHTML = DB.plans.map(p => `<label class="chip"><input type="checkbox" value="${p.id}"> ${p.name}</label>`).join('');
+
+  if (id) {
+    const o = DB.offers.find(x => x.id === id);
+    document.getElementById('of-name').value = o.name;
+    document.getElementById('of-type').value = o.type;
+    document.getElementById('of-value').value = o.value || '';
+    document.getElementById('of-start').value = o.startDate;
+    document.getElementById('of-end').value = o.endDate;
+    document.getElementById('of-desc').value = o.description || '';
+    toggleOfferFields();
+    // Check applicable plans
+    setTimeout(() => {
+      (o.planIds||[]).forEach(pid => {
+        const cb = planChips.querySelector(`input[value="${pid}"]`);
+        if (cb) cb.checked = true;
+      });
+    }, 50);
+  } else {
+    document.getElementById('offer-form').reset();
+    toggleOfferFields();
+  }
+  openModal('modal-offer');
+}
+function toggleOfferFields() {
+  const t = document.getElementById('of-type').value;
+  const grp = document.getElementById('of-value-group');
+  const lbl = document.getElementById('of-value-label');
+  if (t === '1plus1') { grp.style.display = 'none'; }
+  else { grp.style.display = 'block'; }
+  if (t === 'percentage') { lbl.textContent = 'Discount %'; }
+  else if (t === 'fixed' || t === 'family') { lbl.textContent = 'Discount Amount (₹)'; }
+  else { lbl.textContent = 'Value'; }
+}
+function handleSaveOffer(e) {
+  e.preventDefault();
+  const planIds = [...document.querySelectorAll('#of-plans input:checked')].map(c => c.value);
+  const data = {
+    name: document.getElementById('of-name').value.trim(),
+    type: document.getElementById('of-type').value,
+    value: parseInt(document.getElementById('of-value').value) || 0,
+    planIds: planIds,
+    startDate: document.getElementById('of-start').value,
+    endDate: document.getElementById('of-end').value,
+    description: document.getElementById('of-desc').value.trim()
+  };
+  if (editingOfferId) {
+    const idx = DB.offers.findIndex(o => o.id === editingOfferId);
+    if (idx >= 0) Object.assign(DB.offers[idx], data);
+    showToast('Offer updated', 'success');
+  } else {
+    data.id = genId('OF');
+    DB.offers.push(data);
+    showToast('Offer created', 'success');
+  }
+  saveDB();
+  closeModal('modal-offer');
+  renderOffers();
+  return false;
+}
+function deleteOffer(id) {
+  showConfirm('Delete Offer?', 'This offer will be removed permanently.', 'Delete', '🗑️', () => {
+    DB.offers = DB.offers.filter(o => o.id !== id);
+    saveDB();
+    renderOffers();
+    showToast('Offer deleted');
+  });
+}
+
+// ======================== PAYMENTS PAGE ========================
+function renderPayments() {
+  const all = [...DB.payments].sort((a, b) => new Date(b.date) - new Date(a.date));
+  const todayStr = today();
+  const todayP = all.filter(p => p.date === todayStr);
+  const thisWeek = all.filter(p => daysBetween(p.date, todayStr) >= -7);
+  const thisMonth = all.filter(p => {
+    const pd = new Date(p.date);
+    const now = new Date();
+    return pd.getMonth() === now.getMonth() && pd.getFullYear() === now.getFullYear();
+  });
+  const pending = all.filter(p => p.status === 'pending' || p.status === 'partial');
+
+  const todaySum = todayP.reduce((s, p) => s + (p.amount || 0), 0);
+  const weekSum = thisWeek.reduce((s, p) => s + (p.amount || 0), 0);
+  const monthSum = thisMonth.reduce((s, p) => s + (p.amount || 0), 0);
+  const pendingSum = pending.reduce((s, p) => s + (p.pendingAmount || 0), 0);
+
+  let html = `
+    <div class="members-header"><h2>Payments</h2></div>
+    <div class="payments-summary">
+      <div class="stat-card green"><div class="sc-label">Today's Collection</div><div class="sc-value">${fmtMoney(todaySum)}</div></div>
+      <div class="stat-card green"><div class="sc-label">This Week</div><div class="sc-value">${fmtMoney(weekSum)}</div></div>
+      <div class="stat-card green"><div class="sc-label">This Month</div><div class="sc-value">${fmtMoney(monthSum)}</div></div>
+      <div class="stat-card red"><div class="sc-label">Pending</div><div class="sc-value">${fmtMoney(pendingSum)}</div></div>
+    </div>
+
+    <div class="payments-table-wrapper">
+      <table class="payments-table">
+        <thead><tr><th>Date</th><th>Member</th><th>Type</th><th>Amount</th><th>Method</th><th>Status</th></tr></thead>
+        <tbody>
+  `;
+  all.slice(0, 50).forEach(p => {
+    const m = DB.members.find(x => x.id === p.memberId);
+    html += `<tr>
+      <td>${fmtDate(p.date)}</td>
+      <td><strong>${m ? m.name : 'Unknown'}</strong></td>
+      <td>${p.type || '—'}</td>
+      <td><strong>${fmtMoney(p.amount)}</strong></td>
+      <td>${p.method}</td>
+      <td><span class="status-badge ${p.status === 'paid' ? 'status-active' : 'status-pending'}">${p.status}</span></td>
+    </tr>`;
+  });
+  if (all.length === 0) {
+    html += '<tr><td colspan="6"><div class="empty-state"><div class="es-icon">💰</div><div class="es-text">No payments recorded</div></div></td></tr>';
+  }
+  html += '</tbody></table></div>';
+  document.getElementById('page-payments').innerHTML = html;
+}
+
+// ======================== REPORTS PAGE ========================
+function renderReports() {
+  const now = new Date();
+  const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const monthOptions = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    monthOptions.push({ value: d.toISOString().substring(0, 7), label: monthNames[d.getMonth()] + ' ' + d.getFullYear() });
+  }
+
+  let html = `
+    <div class="reports-header">
+      <h2>Reports</h2>
+      <select id="report-month" onchange="updateReportMonth()" style="padding:8px 12px;border:1.5px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14px">
+        ${monthOptions.map(o => `<option value="${o.value}" ${o.value === now.toISOString().substring(0,7) ? 'selected' : ''}>${o.label}</option>`).join('')}
+      </select>
+      <button class="btn btn-primary" onclick="downloadPDF()">📄 Download PDF</button>
+    </div>
+    <div id="report-stats"></div>
+    <div class="report-grid" id="report-charts"></div>
+  `;
+  document.getElementById('page-reports').innerHTML = html;
+  updateReportMonth();
+}
+function updateReportMonth() {
+  const val = document.getElementById('report-month').value;
+  const [y, m] = val.split('-').map(Number);
+  const monthStart = new Date(y, m - 1, 1);
+  const monthEnd = new Date(y, m, 0);
+
+  const monthMembers = DB.members.filter(mb => {
+    const rd = new Date(mb.registrationDate);
+    return rd >= monthStart && rd <= monthEnd;
+  });
+  const monthPayments = DB.payments.filter(p => {
+    const pd = new Date(p.date);
+    return pd >= monthStart && pd <= monthEnd;
+  });
+  const activeMembers = DB.members.filter(mb => getMemberStatus(mb) === 'active');
+  const expiredMembers = DB.members.filter(mb => getMemberStatus(mb) === 'expired');
+  const stoppedMembers = DB.members.filter(mb => getMemberStatus(mb) === 'stopped');
+  const totalRevenue = monthPayments.reduce((s, p) => s + (p.amount || 0), 0);
+  const pendingAmount = DB.payments.filter(p => p.status === 'pending' || p.status === 'partial').reduce((s, p) => s + (p.pendingAmount || 0), 0);
+
+  const planCounts = {};
+  DB.members.forEach(mb => {
+    const mem = getActiveMembership(mb);
+    if (mem) {
+      const plan = DB.plans.find(p => p.id === mem.planId);
+      const name = plan ? plan.name : 'Unknown';
+      planCounts[name] = (planCounts[name] || 0) + 1;
+    }
+  });
+  const topPlan = Object.entries(planCounts).sort((a,b) => b[1] - a[1])[0];
+
+  const goalCounts = {};
+  DB.members.forEach(mb => {
+    (mb.goals || []).forEach(g => { goalCounts[g] = (goalCounts[g] || 0) + 1; });
+  });
+  const topGoal = Object.entries(goalCounts).sort((a,b) => b[1] - a[1])[0];
+
+  let statsHtml = `
+    <div class="stats-grid" style="margin-bottom:20px">
+      <div class="stat-card"><div class="sc-label">Total Members</div><div class="sc-value">${DB.members.length}</div></div>
+      <div class="stat-card green"><div class="sc-label">Active</div><div class="sc-value">${activeMembers.length}</div></div>
+      <div class="stat-card"><div class="sc-label">New Members</div><div class="sc-value">${monthMembers.length}</div></div>
+      <div class="stat-card red"><div class="sc-label">Expired</div><div class="sc-value">${expiredMembers.length}</div></div>
+      <div class="stat-card green"><div class="sc-label">Revenue</div><div class="sc-value">${fmtMoney(totalRevenue)}</div></div>
+      <div class="stat-card red"><div class="sc-label">Pending</div><div class="sc-value">${fmtMoney(pendingAmount)}</div></div>
+      <div class="stat-card"><div class="sc-label">Most Popular Plan</div><div class="sc-value" style="font-size:16px">${topPlan ? topPlan[0] : '—'}</div></div>
+      <div class="stat-card"><div class="sc-label">Top Goal</div><div class="sc-value" style="font-size:16px">${topGoal ? topGoal[0] : '—'}</div></div>
+    </div>
+  `;
+  document.getElementById('report-stats').innerHTML = statsHtml;
+
+  let chartsHtml = `
+    <div class="report-card">
+      <h3>📊 Plan Distribution</h3>
+      <div class="chart-container"><canvas id="chart-plans"></canvas></div>
+    </div>
+    <div class="report-card">
+      <h3>🏋️ Fitness Goals</h3>
+      <div class="chart-container"><canvas id="chart-goals"></canvas></div>
+    </div>
+    <div class="report-card">
+      <h3>📈 Membership Status</h3>
+      <div class="chart-container"><canvas id="chart-status"></canvas></div>
+    </div>
+    <div class="report-card">
+      <h3>💰 Payment Methods</h3>
+      <div class="chart-container"><canvas id="chart-payments"></canvas></div>
+    </div>
+  `;
+  document.getElementById('report-charts').innerHTML = chartsHtml;
+
+  // Render charts
+  setTimeout(() => {
+    const colors = ['#DC2626','#EA580C','#CA8A04','#16A34A','#2563EB','#7C3AED','#EC4899','#14B8A6'];
+    const planLabels = Object.keys(planCounts);
+    const planData = Object.values(planCounts);
+    if (planLabels.length > 0) {
+      new Chart(document.getElementById('chart-plans'), {
+        type: 'doughnut',
+        data: { labels: planLabels, datasets: [{ data: planData, backgroundColor: colors }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 8, font: { size: 11 } } } } }
+      });
+    }
+
+    const goalLabels = Object.keys(goalCounts);
+    const goalData = Object.values(goalCounts);
+    if (goalLabels.length > 0) {
+      new Chart(document.getElementById('chart-goals'), {
+        type: 'bar',
+        data: { labels: goalLabels, datasets: [{ data: goalData, backgroundColor: colors }] },
+        options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+      });
+    }
+
+    const statusLabels = ['Active', 'Expired', 'Stopped', 'Pending'];
+    const statusData = [activeMembers.length, expiredMembers.length, stoppedMembers.length, DB.members.filter(mb => getMemberStatus(mb) === 'pending').length];
+    new Chart(document.getElementById('chart-status'), {
+      type: 'pie',
+      data: { labels: statusLabels, datasets: [{ data: statusData, backgroundColor: ['#16A34A', '#DC2626', '#6B7280', '#CA8A04'] }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 8, font: { size: 11 } } } } }
+    });
+
+    const methodCounts = {};
+    DB.payments.forEach(p => { methodCounts[p.method] = (methodCounts[p.method] || 0) + 1; });
+    const methodLabels = Object.keys(methodCounts);
+    const methodData = Object.values(methodCounts);
+    if (methodLabels.length > 0) {
+      new Chart(document.getElementById('chart-payments'), {
+        type: 'doughnut',
+        data: { labels: methodLabels, datasets: [{ data: methodData, backgroundColor: colors }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 8, font: { size: 11 } } } } }
+      });
+    }
+  }, 100);
+}
+
+// ======================== PDF GENERATION ========================
+function downloadPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const val = document.getElementById('report-month')?.value || today().substring(0,7);
+  const [y, m] = val.split('-').map(Number);
+  const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const monthName = monthNames[m-1] + ' ' + y;
+
+  const activeMembers = DB.members.filter(mb => getMemberStatus(mb) === 'active');
+  const expiredMembers = DB.members.filter(mb => getMemberStatus(mb) === 'expired');
+  const monthPayments = DB.payments.filter(p => {
+    const pd = new Date(p.date);
+    return pd.getMonth() === m-1 && pd.getFullYear() === y;
+  });
+  const totalRevenue = monthPayments.reduce((s, p) => s + (p.amount || 0), 0);
+  const pendingAmount = DB.payments.filter(p => p.status === 'pending' || p.status === 'partial').reduce((s, p) => s + (p.pendingAmount || 0), 0);
+
+  // Title
+  doc.setFontSize(22);
+  doc.setTextColor(220, 38, 38);
+  doc.text('GYM MASTER', 105, 20, { align: 'center' });
+  doc.setFontSize(14);
+  doc.setTextColor(60, 60, 60);
+  doc.text('Monthly Business Report', 105, 28, { align: 'center' });
+  doc.setFontSize(12);
+  doc.text(monthName, 105, 35, { align: 'center' });
+
+  doc.setDrawColor(220, 38, 38);
+  doc.setLineWidth(0.5);
+  doc.line(20, 40, 190, 40);
+
+  // Summary
+  doc.setFontSize(14);
+  doc.setTextColor(30, 30, 30);
+  doc.text('Summary', 20, 50);
+
+  doc.setFontSize(11);
+  const summary = [
+    ['Total Members', DB.members.length.toString()],
+    ['Active Members', activeMembers.length.toString()],
+    ['Expired Members', expiredMembers.length.toString()],
+    ['Total Revenue', fmtMoney(totalRevenue)],
+    ['Pending Payments', fmtMoney(pendingAmount)],
+    ['New Members This Month', DB.members.filter(mb => { const rd = new Date(mb.registrationDate); return rd.getMonth() === m-1 && rd.getFullYear() === y; }).length.toString()],
+    ['Payments This Month', monthPayments.length.toString()]
+  ];
+  let sy = 58;
+  summary.forEach(([label, val]) => {
+    doc.setTextColor(100, 100, 100);
+    doc.text(label, 25, sy);
+    doc.setTextColor(30, 30, 30);
+    doc.text(val, 130, sy);
+    sy += 8;
+  });
+
+  // Members table
+  sy += 6;
+  doc.setFontSize(14);
+  doc.setTextColor(30, 30, 30);
+  doc.text('Member List', 20, sy);
+  sy += 8;
+  doc.setFontSize(9);
+  doc.setTextColor(100, 100, 100);
+  doc.text('Name', 20, sy);
+  doc.text('Phone', 60, sy);
+  doc.text('Status', 100, sy);
+  doc.text('Plan', 130, sy);
+  doc.text('Expiry', 165, sy);
+  sy += 5;
+  doc.setDrawColor(200, 200, 200);
+  doc.line(20, sy, 190, sy);
+  sy += 5;
+
+  doc.setTextColor(50, 50, 50);
+  DB.members.slice(0, 25).forEach(mb => {
+    if (sy > 270) { doc.addPage(); sy = 20; }
+    const mem = getActiveMembership(mb);
+    const plan = mem ? DB.plans.find(p => p.id === mem.planId) : null;
+    const st = getMemberStatus(mb);
+    doc.text(mb.name.substring(0, 20), 20, sy);
+    doc.text(mb.phone, 60, sy);
+    doc.text(st, 100, sy);
+    doc.text(plan ? plan.name.substring(0, 12) : '—', 130, sy);
+    doc.text(mem ? fmtDate(mem.expiryDate) : '—', 165, sy);
+    sy += 6;
+  });
+
+  doc.save('GymMaster_Report_' + val + '.pdf');
+  showToast('PDF downloaded successfully', 'success');
+}
+
+// ======================== SETTINGS ========================
+function renderSettings() {
+  let html = `
+    <div class="members-header"><h2>Settings</h2></div>
+
+    <div class="settings-section">
+      <h3>💾 Data Backup</h3>
+      <p>Export your gym data to a file. You can import it later to restore your data.</p>
+      <div class="settings-actions">
+        <button class="btn btn-primary" onclick="exportBackup()">📥 Export Backup</button>
+        <button class="btn btn-secondary" onclick="document.getElementById('import-file').click()">📤 Import Backup</button>
+        <input type="file" id="import-file" accept=".json" style="display:none" onchange="importBackup(event)">
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h3>🔄 Reset Demo Data</h3>
+      <p>Reset all data and reload the demo with sample data. This cannot be undone.</p>
+      <div class="settings-actions">
+        <button class="btn btn-danger" onclick="confirmReset()">🗑️ Reset All Data</button>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h3>ℹ️ About</h3>
+      <p>GYM MASTER v1.0 — Demo Version</p>
+      <p>A simple, powerful gym membership management system.</p>
+      <p style="margin-top:8px;color:var(--gray-400)">Built with ❤️ for gym owners</p>
+    </div>
+  `;
+  document.getElementById('page-settings').innerHTML = html;
+}
+function exportBackup() {
+  const data = JSON.stringify(DB, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'gymmaster_backup_' + today() + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('Backup exported successfully', 'success');
+}
+function importBackup(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      const data = JSON.parse(ev.target.result);
+      if (data.members && data.plans) {
+        DB = data;
+        saveDB();
+        showToast('Backup imported successfully', 'success');
+        navigateTo(currentPage);
+      } else {
+        showToast('Invalid backup file', 'error');
+      }
+    } catch(err) {
+      showToast('Error reading backup file', 'error');
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+}
+function confirmReset() {
+  showConfirm('Reset All Data?', 'This will delete all members, plans, offers, and payments. Demo data will be reloaded.', 'Reset', '🗑️', () => {
+    resetDB();
+    generateDemoData();
+    saveDB();
+    showToast('Demo data has been reset', 'success');
+    navigateTo('dashboard');
+  });
+}
+
+// ======================== ADD MEMBER ========================
+let selectedPlanId = null;
+let selectedOfferId = null;
+let isDuplicate = false;
+
+function openAddMember() {
+  isDuplicate = false;
+  selectedPlanId = null;
+  selectedOfferId = null;
+  document.getElementById('add-member-form').reset();
+  document.getElementById('am-regdate').value = today();
+  document.getElementById('duplicate-alert').style.display = 'none';
+  document.getElementById('am-pricing').style.display = 'none';
+
+  // Render plans
+  const plansEl = document.getElementById('am-plans');
+  plansEl.innerHTML = DB.plans.filter(p => p.active !== false).map(p => `
+    <div class="plan-select-card" onclick="selectPlan('${p.id}', this)">
+      <input type="radio" name="am-plan" value="${p.id}">
+      <div class="psc-name">${p.name}</div>
+      <div class="psc-price">${fmtMoney(p.price)}</div>
+      <div class="psc-duration">${p.duration} ${p.unit}</div>
+    </div>
+  `).join('');
+
+  // Render active offers
+  const offersEl = document.getElementById('am-offers');
+  const activeOffers = DB.offers.filter(o => {
+    const now = new Date();
+    return now >= new Date(o.startDate) && now <= new Date(o.endDate);
+  });
+  if (activeOffers.length === 0) {
+    document.getElementById('am-offers-title').style.display = 'none';
+    offersEl.innerHTML = '';
+  } else {
+    document.getElementById('am-offers-title').style.display = '';
+    offersEl.innerHTML = activeOffers.map(o => {
+      const discount = calculateOfferDiscount(o, 0);
+      const valText = o.type === 'percentage' ? o.value + '% OFF' : o.type === 'fixed' ? fmtMoney(o.value) + ' OFF' : o.type === '1plus1' ? 'Buy 1 Get 1 Free' : fmtMoney(o.value) + ' Family';
+      return `
+        <div class="offer-select-card" onclick="selectOffer('${o.id}', this)">
+          <input type="radio" name="am-offer" value="${o.id}">
+          <div class="osc-info">
+            <div class="osc-name">${o.name}</div>
+            <div class="osc-desc">${valText}</div>
+          </div>
+          <div class="osc-discount">${o.type === '1plus1' ? '1+1' : '-' + (o.type === 'percentage' ? o.value + '%' : fmtMoney(o.value))}</div>
+        </div>`;
+    }).join('');
+  }
+
+  openModal('modal-add-member');
+}
+
+function selectPlan(planId, el) {
+  selectedPlanId = planId;
+  document.querySelectorAll('#am-plans .plan-select-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+  updatePricing();
+}
+function selectOffer(offerId, el) {
+  if (selectedOfferId === offerId) {
+    selectedOfferId = null;
+    el.classList.remove('selected');
+  } else {
+    selectedOfferId = offerId;
+    document.querySelectorAll('#am-offers .offer-select-card').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
+  }
+  updatePricing();
+}
+function updatePricing() {
+  const plan = DB.plans.find(p => p.id === selectedPlanId);
+  if (!plan) { document.getElementById('am-pricing').style.display = 'none'; return; }
+  let price = plan.price;
+  let discount = 0;
+  if (selectedOfferId) {
+    const offer = DB.offers.find(o => o.id === selectedOfferId);
+    if (offer) discount = calculateOfferDiscount(offer, price);
+  }
+  const final = Math.max(0, price - discount);
+  document.getElementById('am-price').textContent = fmtMoney(price);
+  document.getElementById('am-discount').textContent = '-' + fmtMoney(discount);
+  document.getElementById('am-final').textContent = fmtMoney(final);
+  document.getElementById('am-discount-row').style.display = discount > 0 ? 'flex' : 'none';
+  document.getElementById('am-pricing').style.display = 'block';
+  document.getElementById('am-paid').value = final;
+  document.getElementById('am-paid').max = final;
+}
+function calculateOfferDiscount(offer, price) {
+  if (offer.type === 'percentage') return Math.round(price * offer.value / 100);
+  if (offer.type === 'fixed') return offer.value;
+  if (offer.type === '1plus1') return Math.round(price * 0.33);
+  if (offer.type === 'family') return offer.value;
+  return 0;
+}
+
+function checkDuplicate(field, value) {
+  if (!value || value.length < 5) { document.getElementById('duplicate-alert').style.display = 'none'; isDuplicate = false; return; }
+  const norm = normalizePhone(value);
+  const existing = DB.members.find(m => {
+    if (field === 'phone') return normalizePhone(m.phone) === norm;
+    return false;
+  });
+  if (existing) {
+    isDuplicate = true;
+    const mem = getActiveMembership(existing);
+    const st = getMemberStatus(existing);
+    const plan = mem ? DB.plans.find(p => p.id === mem.planId) : null;
+    document.getElementById('duplicate-alert').innerHTML = `
+      <h4>⚠️ MEMBER ALREADY EXISTS</h4>
+      <p>An existing member matches this phone number.</p>
+      <div class="da-member">${existing.name} (${existing.id})</div>
+      <p>Status: <span class="status-badge ${getStatusClass(st)}">${getStatusLabel(st)}</span></p>
+      <p>Plan: ${plan ? plan.name : 'None'} | Expires: ${mem ? fmtDate(mem.expiryDate) : '—'}</p>
+      <div class="da-actions">
+        <button class="btn btn-sm btn-secondary" onclick="closeModal('modal-add-member');navigateTo('member-profile','${existing.id}')">View Existing Member</button>
+        <button class="btn btn-sm btn-outline" onclick="document.getElementById('duplicate-alert').style.display='none';isDuplicate=false">Cancel</button>
+      </div>`;
+    document.getElementById('duplicate-alert').style.display = 'block';
+  } else {
+    isDuplicate = false;
+    document.getElementById('duplicate-alert').style.display = 'none';
+  }
+}
+
+function handleAddMember(e) {
+  e.preventDefault();
+  if (isDuplicate) { showToast('Please resolve duplicate first', 'error'); return false; }
+  if (!selectedPlanId) { showToast('Please select a membership plan', 'error'); return false; }
+
+  const goals = [...document.querySelectorAll('#am-goals input:checked')].map(c => c.value);
+  const plan = DB.plans.find(p => p.id === selectedPlanId);
+  const offer = selectedOfferId ? DB.offers.find(o => o.id === selectedOfferId) : null;
+  const originalPrice = plan.price;
+  const discount = offer ? calculateOfferDiscount(offer, originalPrice) : 0;
+  const finalPrice = Math.max(0, originalPrice - discount);
+  const paid = parseInt(document.getElementById('am-paid').value) || 0;
+  const regDate = document.getElementById('am-regdate').value || today();
+
+  const memberId = genId('GM');
+  const expiryDate = addDuration(regDate, plan.duration, plan.unit);
+
+  // Check for family group based on 1+1 offer
+  let familyGroupId = null;
+  if (offer && offer.type === '1plus1') {
+    familyGroupId = 'FAM-' + Date.now().toString().slice(-6);
+  }
+
+  const member = {
+    id: memberId,
+    name: document.getElementById('am-name').value.trim(),
+    phone: document.getElementById('am-phone').value.trim(),
+    whatsapp: document.getElementById('am-whatsapp').value.trim() || document.getElementById('am-phone').value.trim(),
+    email: document.getElementById('am-email').value.trim(),
+    dob: document.getElementById('am-dob').value,
+    gender: document.getElementById('am-gender').value,
+    registrationDate: regDate,
+    goals: goals,
+    emergency: document.getElementById('am-emergency').value.trim(),
+    notes: document.getElementById('am-notes').value.trim(),
+    familyGroupId: familyGroupId,
+    status: 'active',
+    memberships: [{
+      id: genId('MEM'),
+      planId: plan.id,
+      offerId: offer ? offer.id : null,
+      startDate: regDate,
+      expiryDate: expiryDate,
+      originalPrice: originalPrice,
+      discount: discount,
+      finalPrice: finalPrice,
+      paymentStatus: paid >= finalPrice ? 'paid' : paid > 0 ? 'partial' : 'pending',
+      status: 'active',
+      freezeHistory: [],
+      createdAt: new Date().toISOString()
+    }],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  DB.members.push(member);
+
+  // Record payment
+  if (paid > 0) {
+    DB.payments.push({
+      id: genId('PAY'),
+      memberId: memberId,
+      membershipId: member.memberships[0].id,
+      amount: paid,
+      method: document.getElementById('am-method').value,
+      date: regDate,
+      status: paid >= finalPrice ? 'paid' : 'partial',
+      pendingAmount: Math.max(0, finalPrice - paid),
+      type: 'registration',
+      createdAt: new Date().toISOString()
+    });
+  }
+
+  saveDB();
+  closeModal('modal-add-member');
+  showToast('Member added successfully!', 'success');
+  if (currentPage === 'members') renderMembers();
+  else if (currentPage === 'dashboard') renderDashboard();
+  return false;
+}
+
+// ======================== RENEW MEMBERSHIP ========================
+function openRenew(memberId) {
+  const m = DB.members.find(x => x.id === memberId);
+  if (!m) return;
+  const mem = getActiveMembership(m);
+  const currentPlan = mem ? DB.plans.find(p => p.id === mem.planId) : null;
+  const expiryStatus = mem ? getExpiryStatus(mem.expiryDate) : 'expired';
+  const isExpired = expiryStatus === 'expired';
+
+  let body = `
+    <div style="margin-bottom:16px">
+      <h3 style="margin-bottom:4px">${m.name}</h3>
+      <p style="color:var(--gray-500);font-size:13px">${m.id}</p>
+    </div>
+    <div class="pricing-summary" style="margin-bottom:16px">
+      <div class="pricing-row"><span>Current Plan</span><span>${currentPlan ? currentPlan.name : 'None'}</span></div>
+      <div class="pricing-row"><span>Current Expiry</span><span>${mem ? fmtDate(mem.expiryDate) : '—'}</span></div>
+      <div class="pricing-row"><span>Status</span><span class="status-badge ${getStatusClass(expiryStatus)}">${getStatusLabel(expiryStatus)}</span></div>
+    </div>
+    <p style="font-size:13px;color:var(--gray-500);margin-bottom:16px">
+      ${isExpired ? 'Since membership has expired, the new membership starts from today.' : 'New membership will start from current expiry date so remaining period is not lost.'}
+    </p>
+    <h3 class="section-title">Select Plan</h3>
+    <div class="plans-grid-display" style="margin-bottom:16px">
+  `;
+  DB.plans.filter(p => p.active !== false).forEach(p => {
+    body += `
+      <div class="plan-select-card" onclick="selectRenewPlan('${p.id}', this)">
+        <input type="radio" name="renew-plan" value="${p.id}">
+        <div class="psc-name">${p.name}</div>
+        <div class="psc-price">${fmtMoney(p.price)}</div>
+        <div class="psc-duration">${p.duration} ${p.unit}</div>
+      </div>`;
+  });
+  body += `</div>
+    <div class="pricing-summary" id="renew-pricing" style="display:none">
+      <div class="pricing-row"><span>Plan Price</span><span id="renew-price">₹0</span></div>
+      <div class="pricing-row total"><span>Total Amount</span><span id="renew-total">₹0</span></div>
+    </div>
+    <div class="form-row" style="margin-top:16px">
+      <div class="form-group"><label>Amount Paid</label><input type="number" id="renew-paid" min="0" value="0"></div>
+      <div class="form-group"><label>Payment Method</label>
+        <select id="renew-method"><option value="Cash">Cash</option><option value="UPI">UPI</option><option value="Card">Card</option><option value="Bank Transfer">Bank Transfer</option><option value="Other">Other</option></select>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal('modal-renew')">Cancel</button>
+      <button class="btn btn-primary" onclick="processRenewal('${m.id}', ${isExpired})">Renew Membership</button>
+    </div>`;
+
+  document.getElementById('renew-body').innerHTML = body;
+  window._renewSelectedPlan = null;
+  openModal('modal-renew');
+}
+
+function selectRenewPlan(planId, el) {
+  window._renewSelectedPlan = planId;
+  document.querySelectorAll('#renew-body .plan-select-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+  const plan = DB.plans.find(p => p.id === planId);
+  if (plan) {
+    document.getElementById('renew-price').textContent = fmtMoney(plan.price);
+    document.getElementById('renew-total').textContent = fmtMoney(plan.price);
+    document.getElementById('renew-paid').value = plan.price;
+    document.getElementById('renew-pricing').style.display = 'block';
+  }
+}
+
+function processRenewal(memberId, isExpired) {
+  const planId = window._renewSelectedPlan;
+  if (!planId) { showToast('Please select a plan', 'error'); return; }
+  const plan = DB.plans.find(p => p.id === planId);
+  const m = DB.members.find(x => x.id === memberId);
+  const mem = getActiveMembership(m);
+  const paid = parseInt(document.getElementById('renew-paid').value) || 0;
+
+  // Business rule: start from expiry if not expired, else from today
+  let startDate = isExpired ? today() : (mem ? mem.expiryDate : today());
+  let expiryDate = addDuration(startDate, plan.duration, plan.unit);
+
+  const newMembership = {
+    id: genId('MEM'),
+    planId: plan.id,
+    offerId: null,
+    startDate: startDate,
+    expiryDate: expiryDate,
+    originalPrice: plan.price,
+    discount: 0,
+    finalPrice: plan.price,
+    paymentStatus: paid >= plan.price ? 'paid' : paid > 0 ? 'partial' : 'pending',
+    status: 'active',
+    freezeHistory: [],
+    createdAt: new Date().toISOString()
+  };
+
+  m.memberships.push(newMembership);
+  m.status = 'active';
+  m.updatedAt = new Date().toISOString();
+
+  DB.payments.push({
+    id: genId('PAY'),
+    memberId: memberId,
+    membershipId: newMembership.id,
+    amount: paid,
+    method: document.getElementById('renew-method').value,
+    date: today(),
+    status: paid >= plan.price ? 'paid' : 'partial',
+    pendingAmount: Math.max(0, plan.price - paid),
+    type: 'renewal',
+    createdAt: new Date().toISOString()
+  });
+
+  saveDB();
+  closeModal('modal-renew');
+  showToast('Membership renewed successfully!', 'success');
+  if (currentPage === 'member-profile') renderMemberProfile(memberId);
+  else if (currentPage === 'dashboard') renderDashboard();
+  else if (currentPage === 'members') renderMembers();
+}
+
+function quickRenew() {
+  // Show a quick member selector
+  const members = DB.members.filter(m => {
+    const st = getMemberStatus(m);
+    return st === 'expired' || st.includes('expiring');
+  });
+  if (members.length === 0) {
+    showToast('No members need renewal right now');
+    return;
+  }
+  navigateTo('members');
+  showToast('Select a member to renew', 'warning');
+}
+
+function quickPayment() {
+  const pending = DB.payments.filter(p => p.status === 'pending' || p.status === 'partial');
+  if (pending.length === 0) {
+    showToast('No pending payments!');
+    return;
+  }
+  navigateTo('payments');
+}
+
+// ======================== FREEZE ========================
+function openFreeze(memberId) {
+  const m = DB.members.find(x => x.id === memberId);
+  if (!m) return;
+  const mem = getActiveMembership(m);
+  if (!mem) { showToast('No active membership to freeze', 'error'); return; }
+
+  let body = `
+    <div style="margin-bottom:16px">
+      <h3>Freeze for: ${m.name}</h3>
+      <p style="font-size:13px;color:var(--gray-500)">Current Expiry: ${fmtDate(mem.expiryDate)}</p>
+    </div>
+    <div class="form-group"><label>Freeze Start Date</label><input type="date" id="freeze-start" value="${today()}"></div>
+    <div class="form-group"><label>Freeze End Date</label><input type="date" id="freeze-end"></div>
+    <div class="form-group"><label>Reason</label>
+      <select id="freeze-reason"><option value="Personal">Personal</option><option value="Travel">Travel</option><option value="Medical">Medical</option><option value="Other">Other</option></select>
+    </div>
+    <div class="pricing-summary" id="freeze-preview" style="display:none">
+      <div class="pricing-row"><span>Current Expiry</span><span>${fmtDate(mem.expiryDate)}</span></div>
+      <div class="pricing-row"><span>Freeze Days</span><span id="freeze-days">0</span></div>
+      <div class="pricing-row total"><span>Adjusted Expiry</span><span id="freeze-new-expiry">—</span></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal('modal-freeze')">Cancel</button>
+      <button class="btn btn-primary" onclick="processFreeze('${memberId}')">Freeze Membership</button>
+    </div>`;
+
+  document.getElementById('freeze-body').innerHTML = body;
+
+  // Live update
+  const startEl = document.getElementById('freeze-start');
+  const endEl = document.getElementById('freeze-end');
+  function updateFreeze() {
+    if (startEl.value && endEl.value) {
+      const days = daysBetween(startEl.value, endEl.value);
+      if (days > 0) {
+        const newExpiry = addDuration(mem.expiryDate, days, 'Days');
+        document.getElementById('freeze-days').textContent = days;
+        document.getElementById('freeze-new-expiry').textContent = fmtDate(newExpiry);
+        document.getElementById('freeze-preview').style.display = 'block';
+      }
+    }
+  }
+  startEl.onchange = updateFreeze;
+  endEl.onchange = updateFreeze;
+
+  openModal('modal-freeze');
+}
+
+function processFreeze(memberId) {
+  const m = DB.members.find(x => x.id === memberId);
+  const mem = getActiveMembership(m);
+  const start = document.getElementById('freeze-start').value;
+  const end = document.getElementById('freeze-end').value;
+  if (!start || !end) { showToast('Please select freeze dates', 'error'); return; }
+  const days = daysBetween(start, end);
+  if (days <= 0) { showToast('Freeze end date must be after start', 'error'); return; }
+
+  // Extend expiry
+  mem.expiryDate = addDuration(mem.expiryDate, days, 'Days');
+  mem.freezeHistory.push({ start, end, days, reason: document.getElementById('freeze-reason').value });
+  m.updatedAt = new Date().toISOString();
+
+  saveDB();
+  closeModal('modal-freeze');
+  showToast(`Membership frozen for ${days} days. Expiry extended to ${fmtDate(mem.expiryDate)}`, 'success');
+  renderMemberProfile(memberId);
+}
+
+// ======================== STOP MEMBERSHIP ========================
+function stopMember(memberId) {
+  showConfirm('Stop Membership?', 'The member\'s membership will be stopped. This will be recorded in history.', 'Stop', '⏸', () => {
+    const m = DB.members.find(x => x.id === memberId);
+    if (!m) return;
+    m.status = 'stopped';
+    const mem = getActiveMembership(m);
+    if (mem) mem.status = 'stopped';
+    m.updatedAt = new Date().toISOString();
+    saveDB();
+    showToast('Membership stopped');
+    renderMemberProfile(memberId);
+  });
+}
+
+// ======================== SEARCH ========================
+function handleGlobalSearch(val) {
+  if (currentPage !== 'members') navigateTo('members');
+  else renderMembers();
+}
+
+// ======================== DEMO DATA ========================
+function generateDemoData() {
+  // Plans
+  DB.plans = [
+    { id: 'PL-100001', name: 'Monthly', duration: 1, unit: 'Months', price: 1200, description: 'Basic monthly plan', active: true },
+    { id: 'PL-100002', name: '3 Months', duration: 3, unit: 'Months', price: 3000, description: 'Popular 3-month plan', active: true },
+    { id: 'PL-100003', name: '6 Months', duration: 6, unit: 'Months', price: 5000, description: 'Best value 6-month plan', active: true },
+    { id: 'PL-100004', name: 'Yearly', duration: 1, unit: 'Years', price: 8000, description: 'Premium yearly plan', active: true },
+  ];
+
+  const goals = ['Weight Loss', 'Muscle Building', 'Strength Training', 'General Fitness', 'Fat Loss', 'Competition Training', 'Weight Gain'];
+  const firstNames = ['Arun','Priya','Rahul','Sneha','Vikram','Ananya','Deepak','Meera','Karthik','Pooja','Suresh','Kavita','Ravi','Divya','Amit','Nisha','Sanjay','Rekha','Manoj','Geeta','Vikas','Sunita','Rajesh','Lata','Nitin'];
+  const lastNames = ['Kumar','Sharma','Singh','Patel','Reddy','Gupta','Nair','Iyer','Das','Rao','Joshi','Mishra','Tiwari','Verma','Choudhary','Mehta','Shah','Pandey','Chauhan','Bhatt'];
+
+  DB.members = [];
+  DB.payments = [];
+
+  const todayDate = new Date();
+
+  firstNames.forEach((fn, i) => {
+    const name = fn + ' ' + lastNames[i % lastNames.length];
+    const phone = '9' + (876543210 + i * 1111111).toString().substring(0, 10);
+    const regDaysAgo = Math.floor(Math.random() * 180) + 30;
+    const regDate = new Date(todayDate);
+    regDate.setDate(regDate.getDate() - regDaysAgo);
+
+    const planIdx = Math.floor(Math.random() * DB.plans.length);
+    const plan = DB.plans[planIdx];
+    const memberGoals = [goals[Math.floor(Math.random() * goals.length)]];
+    if (Math.random() > 0.6) memberGoals.push(goals[Math.floor(Math.random() * goals.length)]);
+
+    // Vary expiry dates for demo
+    let expiryOffset;
+    if (i < 3) expiryOffset = -Math.floor(Math.random() * 10) - 1; // Expired
+    else if (i < 6) expiryOffset = 0; // Expiring today
+    else if (i < 10) expiryOffset = Math.floor(Math.random() * 3) + 1; // 1-3 days
+    else if (i < 14) expiryOffset = Math.floor(Math.random() * 4) + 4; // 4-7 days
+    else expiryOffset = Math.floor(Math.random() * 90) + 8; // Active
+
+    const startDate = regDate.toISOString().split('T')[0];
+    let expiryDate = new Date(regDate);
+    if (plan.unit === 'Days') expiryDate.setDate(expiryDate.getDate() + plan.duration);
+    else if (plan.unit === 'Months') expiryDate.setMonth(expiryDate.getMonth() + plan.duration);
+    else expiryDate.setFullYear(expiryDate.getFullYear() + plan.duration);
+    // Override to create variety
+    expiryDate = new Date(todayDate);
+    expiryDate.setDate(expiryDate.getDate() + expiryOffset);
+    const expiryStr = expiryDate.toISOString().split('T')[0];
+
+    const paid = Math.random() > 0.15;
+    const partialPaid = !paid && Math.random() > 0.5;
+    const paymentStatus = paid ? 'paid' : partialPaid ? 'partial' : 'pending';
+
+    let status = 'active';
+    if (i >= 0 && i < 3) status = 'active'; // expired but status active (handled by expiry check)
+    if (i === 22) status = 'stopped';
+
+    const memId = 'GM-' + String(100001 + i);
+    const membershipId = 'MEM-' + String(200001 + i);
+
+    const member = {
+      id: memId,
+      name: name,
+      phone: phone,
+      whatsapp: phone,
+      email: Math.random() > 0.6 ? name.toLowerCase().replace(' ', '.') + '@email.com' : '',
+      dob: `${1985 + Math.floor(Math.random() * 20)}-${String(Math.floor(Math.random() * 12) + 1).padStart(2, '0')}-${String(Math.floor(Math.random() * 28) + 1).padStart(2, '0')}`,
+      gender: Math.random() > 0.4 ? 'Male' : 'Female',
+      registrationDate: regDate.toISOString().split('T')[0],
+      goals: memberGoals,
+      emergency: Math.random() > 0.5 ? '9' + (9876543210 - i * 1111111).toString().substring(0, 10) : '',
+      notes: '',
+      familyGroupId: i < 2 ? 'FAM-001' : null,
+      status: status,
+      memberships: [{
+        id: membershipId,
+        planId: plan.id,
+        offerId: i < 2 ? 'OF-300001' : null,
+        startDate: startDate,
+        expiryDate: expiryStr,
+        originalPrice: plan.price,
+        discount: i < 2 ? Math.round(plan.price * 0.33) : 0,
+        finalPrice: i < 2 ? Math.round(plan.price * 0.67) : plan.price,
+        paymentStatus: paymentStatus,
+        status: i === 22 ? 'stopped' : 'active',
+        freezeHistory: [],
+        createdAt: regDate.toISOString()
+      }],
+      createdAt: regDate.toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    // Membership history for some
+    if (i > 10) {
+      const oldPlan = DB.plans[Math.floor(Math.random() * DB.plans.length)];
+      const oldStart = new Date(regDate);
+      oldStart.setMonth(oldStart.getMonth() - 6);
+      member.memberships.push({
+        id: 'MEM-H' + i,
+        planId: oldPlan.id,
+        offerId: null,
+        startDate: oldStart.toISOString().split('T')[0],
+        expiryDate: regDate.toISOString().split('T')[0],
+        originalPrice: oldPlan.price,
+        discount: 0,
+        finalPrice: oldPlan.price,
+        paymentStatus: 'paid',
+        status: 'expired',
+        freezeHistory: [],
+        createdAt: oldStart.toISOString()
+      });
+    }
+
+    DB.members.push(member);
+
+    // Payment record
+    DB.payments.push({
+      id: 'PAY-' + String(300001 + i),
+      memberId: memId,
+      membershipId: membershipId,
+      amount: member.memberships[0].finalPrice * (paid ? 1 : partialPaid ? 0.5 : 0),
+      method: ['Cash', 'UPI', 'Card', 'Bank Transfer'][Math.floor(Math.random() * 4)],
+      date: regDate.toISOString().split('T')[0],
+      status: paymentStatus === 'paid' ? 'paid' : paymentStatus === 'partial' ? 'partial' : 'pending',
+      pendingAmount: member.memberships[0].finalPrice * (paid ? 0 : partialPaid ? 0.5 : 1),
+      type: i > 10 ? 'renewal' : 'registration',
+      createdAt: regDate.toISOString()
+    });
+  });
+
+  // Add a few more members with family groups
+  for (let i = 0; i < 3; i++) {
+    const idx = 25 + i;
+    const name = ['Rohit Mehra', 'Sonia Bajaj', 'Tariq Khan'][i];
+    const phone = '9' + (801234567 + i * 1000000).toString().substring(0, 10);
+    const plan = DB.plans[1];
+    const regDate = new Date(todayDate);
+    regDate.setDate(regDate.getDate() - Math.floor(Math.random() * 90) - 10);
+    const expiryDate = new Date(todayDate);
+    expiryDate.setDate(expiryDate.getDate() + Math.floor(Math.random() * 60) - 20);
+
+    const memId = 'GM-' + String(100026 + i);
+    DB.members.push({
+      id: memId, name, phone, whatsapp: phone, email: '',
+      dob: '', gender: i % 2 === 0 ? 'Male' : 'Female',
+      registrationDate: regDate.toISOString().split('T')[0],
+      goals: [goals[i % goals.length]], emergency: '',
+      notes: '', familyGroupId: 'FAM-001', status: 'active',
+      memberships: [{
+        id: 'MEM-' + String(200026 + i), planId: plan.id, offerId: 'OF-300001',
+        startDate: regDate.toISOString().split('T')[0],
+        expiryDate: expiryDate.toISOString().split('T')[0],
+        originalPrice: plan.price, discount: Math.round(plan.price * 0.33),
+        finalPrice: Math.round(plan.price * 0.67),
+        paymentStatus: 'paid', status: 'active', freezeHistory: [],
+        createdAt: regDate.toISOString()
+      }],
+      createdAt: regDate.toISOString(), updatedAt: new Date().toISOString()
+    });
+    DB.payments.push({
+      id: 'PAY-' + String(300026 + i), memberId: memId,
+      membershipId: 'MEM-' + String(200026 + i),
+      amount: Math.round(plan.price * 0.67),
+      method: 'Cash', date: regDate.toISOString().split('T')[0],
+      status: 'paid', pendingAmount: 0, type: 'registration',
+      createdAt: regDate.toISOString()
+    });
+  }
+
+  // Offers
+  DB.offers = [
+    {
+      id: 'OF-300001', name: '1+1 Family Offer', type: '1plus1', value: 0,
+      planIds: ['PL-100002', 'PL-100003'],
+      startDate: '2026-01-01', endDate: '2026-12-31',
+      description: 'Buy one membership and add one family member free.'
+    },
+    {
+      id: 'OF-300002', name: 'Festival Offer', type: 'percentage', value: 20,
+      planIds: ['PL-100004'],
+      startDate: '2026-08-15', endDate: '2026-09-30',
+      description: '20% off on yearly plan during festival season.'
+    },
+    {
+      id: 'OF-300003', name: 'Family Discount', type: 'family', value: 500,
+      planIds: ['PL-100002', 'PL-100003', 'PL-100004'],
+      startDate: '2026-01-01', endDate: '2026-12-31',
+      description: '₹500 off for family members.'
+    }
+  ];
+}
+
+// ======================== INIT ========================
+function init() {
+  if (!loadDB()) {
+    generateDemoData();
+    saveDB();
+  }
+  // Check if plans exist (in case of data corruption)
+  if (!DB.plans || DB.plans.length === 0) {
+    generateDemoData();
+    saveDB();
+  }
+}
+
+// Run
+init();

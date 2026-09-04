@@ -20,7 +20,7 @@
   <div class="modal-card confirm-card">
     <div class="confirm-icon" id="confirm-icon"></div>
     <h3 id="confirm-title">Are you sure?</h3>
-    <p id="confirm-message">This action cannot be undone.</p>
+    <div id="confirm-message">This action cannot be undone.</div>
     <div class="confirm-actions">
       <button class="btn btn-secondary" onclick="closeConfirm()">Cancel</button>
       <button class="btn btn-danger" id="confirm-btn" onclick="">Confirm</button>
@@ -454,6 +454,16 @@
     <button class="as-item" onclick="closeSheet('more-sheet');navigateTo('offers')"><span class="as-icon">🎁</span>Offers</button>
     <button class="as-item" onclick="closeSheet('more-sheet');navigateTo('settings')"><span class="as-icon">⚙️</span>Settings</button>
     <button class="as-item as-cancel" onclick="closeSheet('more-sheet')">Cancel</button>
+  </div>
+</div>
+
+<!-- MEMBER MORE ACTIONS SHEET (mobile) -->
+<div id="member-more-sheet" class="sheet-overlay" style="display:none">
+  <div class="action-sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-brand">More Actions</div>
+    <button class="as-item as-danger" onclick="confirmDeleteMember()"><span class="as-icon">🗑️</span>Delete Member</button>
+    <button class="as-item as-cancel" onclick="closeSheet('member-more-sheet')">Cancel</button>
   </div>
 </div>
 

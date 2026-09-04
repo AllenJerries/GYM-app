@@ -1033,7 +1033,8 @@ textarea { resize: vertical; }
   min-height: 0;
 }
 .confirm-card h3 { font-size: 18px; margin-bottom: 8px; }
-.confirm-card p { font-size: 13px; color: var(--gray-500); margin-bottom: 24px; }
+#confirm-message { font-size: 13px; color: var(--gray-500); margin-bottom: 24px; }
+#confirm-message p { margin-bottom: 0; }
 .confirm-icon { font-size: 46px; margin-bottom: 12px; }
 .confirm-actions { display: flex; flex-direction: column; gap: 10px; }
 .confirm-actions .btn { width: 100%; min-height: 48px; }
@@ -1091,6 +1092,24 @@ textarea { resize: vertical; }
 .as-item:active { background: var(--gray-100); }
 .as-icon { font-size: 22px; }
 .as-cancel { border-top: 1px solid var(--gray-100); margin-top: 8px; border-radius: 0; }
+.as-danger { color: var(--red); }
+.delete-details {
+  width: 100%;
+  background: var(--gray-50);
+  border-radius: 10px;
+  padding: 12px;
+  margin: 6px 0 8px;
+  text-align: left;
+}
+.dd-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 14px;
+}
+.dd-row span { color: var(--gray-500); }
+.dd-row strong { color: var(--gray-800); font-weight: 700; word-break: break-all; }
 
 /* ======================== TOAST ======================== */
 #toast-container {

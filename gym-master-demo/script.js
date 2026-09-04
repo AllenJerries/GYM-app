@@ -135,13 +135,14 @@ function showToast(msg, type) {
   setTimeout(() => t.remove(), 3000);
 }
 let confirmCb = null;
-function showConfirm(title, msg, btnText, icon, cb) {
+function showConfirm(title, msg, btnText, icon, cb, msgHtml) {
   document.getElementById('confirm-title').textContent = title;
   document.getElementById('confirm-message').textContent = msg;
+  if (msgHtml) document.getElementById('confirm-message').innerHTML = msgHtml;
   document.getElementById('confirm-btn').textContent = btnText || 'Confirm';
   document.getElementById('confirm-icon').textContent = icon || '⚠️';
   confirmCb = cb;
-  document.getElementById('confirm-btn').onclick = function() { closeConfirm(); if (confirmCb) confirmCb(); };
+  document.getElementById('confirm-btn').onclick = function() { const cb = confirmCb; closeConfirm(); if (cb) cb(); };
   document.getElementById('confirm-modal').style.display = 'flex';
   document.body.style.overflow = 'hidden';
   document.body.style.touchAction = 'none';
@@ -159,7 +160,10 @@ function closeModal(id) {
   releaseBodyScroll();
 }
 function openMoreSheet() {
-  document.getElementById('more-sheet').style.display = 'flex';
+  openSheet('more-sheet');
+}
+function openSheet(id) {
+  document.getElementById(id).style.display = 'flex';
   document.body.style.overflow = 'hidden';
   document.body.style.touchAction = 'none';
 }
@@ -541,6 +545,7 @@ function renderMemberProfile(memberId) {
         <button class="btn btn-outline" onclick="openFreeze('${m.id}')">⏸ Freeze</button>
         <button class="btn btn-danger" onclick="openDiscontinue('${m.id}')">⏹ Discontinue</button>
         ${m.familyGroupId ? `<button class="btn btn-secondary" onclick="openFamily('${m.familyGroupId}')">👨‍👩‍👧 View Family</button>` : ''}
+        <button class="btn btn-outline" onclick="openMemberMore('${m.id}')">⋮ More Actions</button>
       </div>
     </div>
 
@@ -1927,6 +1932,58 @@ function processDiscontinue(memberId) {
   if (currentPage === 'member-profile') renderMemberProfile(memberId);
   else if (currentPage === 'members') renderMembers();
   else if (currentPage === 'dashboard') renderDashboard();
+}
+
+// ======================== DELETE MEMBER ========================
+let deleteMemberId = null;
+function openMemberMore(memberId) {
+  deleteMemberId = memberId;
+  openSheet('member-more-sheet');
+}
+function confirmDeleteMember() {
+  const id = deleteMemberId;
+  closeSheet('member-more-sheet');
+  deleteMemberId = null;
+  const m = DB.members.find(x => x.id === id);
+  if (!m) return;
+  const details = `
+    <div class="delete-details">
+      <div class="dd-row"><span>Name</span><strong>${esc(m.name)}</strong></div>
+      <div class="dd-row"><span>Member ID</span><strong>${esc(m.id)}</strong></div>
+      <div class="dd-row"><span>Phone</span><strong>${esc(m.phone || '—')}</strong></div>
+    </div>
+    <p style="font-size:13px;color:var(--gray-500);margin-top:10px">This will remove the member and their membership/payment records from this demo database.</p>`;
+  showConfirm(
+    'Delete this member permanently?',
+    '',
+    'Delete Member',
+    '🗑️',
+    () => doDeleteMember(id),
+    details
+  );
+}
+function doDeleteMember(memberId) {
+  const idx = DB.members.findIndex(x => x.id === memberId);
+  if (idx === -1) return;
+  DB.members.splice(idx, 1);
+  DB.payments = (DB.payments || []).filter(p => p.memberId !== memberId);
+  saveDB();
+  closeConfirm();
+  showToast('✓ Member deleted successfully', 'success');
+  if (currentPage === 'member-profile') {
+    navigateTo('members');
+  } else if (currentPage === 'dashboard') {
+    renderDashboard();
+  } else if (currentPage === 'payments') {
+    renderPayments();
+  } else {
+    renderMembers();
+  }
+  if (window.__chartInstances) window.__chartInstances.forEach(ch => { try { ch.destroy(); } catch (e) {} });
+  if (currentPage === 'reports') renderReports();
+}
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 // ======================== PAYMENT MODAL ========================

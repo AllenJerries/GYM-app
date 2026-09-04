@@ -36,13 +36,14 @@
     <h1 class="login-title">GYM MASTER</h1>
     <p class="login-subtitle">Simple Gym Management</p>
     <form id="login-form" onsubmit="return handleLogin(event)">
-      <div class="form-group">
-        <label>Phone / Email</label>
+      <div class="form-group" id="login-email-group">
+        <label>Admin Credentials</label>
         <input type="text" id="login-email" placeholder="Enter phone or email" value="admin@gym.com">
+        <input type="password" id="login-password" placeholder="Enter password" value="demo123" style="margin-top:8px">
       </div>
-      <div class="form-group">
-        <label>Password</label>
-        <input type="password" id="login-password" placeholder="Enter password" value="demo123">
+      <div class="form-group" id="login-pin-group" style="display:none">
+        <label>Admin PIN</label>
+        <input type="password" id="login-pin" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="Enter 4-6 digit PIN" autocomplete="off">
       </div>
       <button type="submit" class="btn btn-primary btn-block">LOGIN</button>
     </form>
@@ -134,12 +135,19 @@
 <div id="modal-add-member" class="modal-overlay" style="display:none">
   <div class="modal-card modal-lg">
     <div class="modal-header">
-      <h2>Add New Member</h2>
+      <h2 id="add-member-title">Add New Member</h2>
       <button class="modal-close" onclick="closeModal('modal-add-member')">✕</button>
     </div>
     <div class="modal-body">
       <div id="duplicate-alert" class="duplicate-alert" style="display:none"></div>
       <form id="add-member-form" onsubmit="return handleAddMember(event)">
+        <div class="form-row form-row-center">
+          <div class="photo-upload" id="am-photo-wrap" onclick="document.getElementById('am-photo-input').click()">
+            <div id="am-photo-preview" class="photo-preview">📷</div>
+            <div class="photo-hint">Add Photo</div>
+            <input type="file" id="am-photo-input" accept="image/*" style="display:none" onchange="handlePhotoUpload(this)">
+          </div>
+        </div>
         <div class="form-row">
           <div class="form-group">
             <label>Full Name *</label>
@@ -153,11 +161,11 @@
         <div class="form-row">
           <div class="form-group">
             <label>WhatsApp Number</label>
-            <input type="tel" id="am-whatsapp" placeholder="Same as phone if blank">
+            <input type="tel" id="am-whatsapp" placeholder="Same as phone if blank" oninput="checkDuplicate('whatsapp', this.value)">
           </div>
           <div class="form-group">
             <label>Email</label>
-            <input type="email" id="am-email" placeholder="Optional">
+            <input type="email" id="am-email" placeholder="Optional" oninput="checkDuplicate('email', this.value)">
           </div>
         </div>
         <div class="form-row">
@@ -180,7 +188,7 @@
           <input type="date" id="am-regdate">
         </div>
         <div class="form-group">
-          <label>Fitness Goal * (select one or more)</label>
+          <label>Fitness Goal * (select one or more, or type a custom goal)</label>
           <div class="goal-chips" id="am-goals">
             <label class="chip"><input type="checkbox" value="Competition Training">🏆 Competition</label>
             <label class="chip"><input type="checkbox" value="Weight Loss">⚖️ Weight Loss</label>
@@ -189,11 +197,19 @@
             <label class="chip"><input type="checkbox" value="Muscle Building">💪 Muscle</label>
             <label class="chip"><input type="checkbox" value="Fat Loss">🔥 Fat Loss</label>
             <label class="chip"><input type="checkbox" value="General Fitness">🧘 General</label>
+            <label class="chip"><input type="checkbox" value="Custom Goal" id="am-goal-custom-chip">✨ Custom</label>
           </div>
+          <input type="text" id="am-goal-custom" placeholder="Type custom goal… (e.g. Marathon Prep)" style="margin-top:8px;display:none">
         </div>
-        <div class="form-group">
-          <label>Emergency Contact</label>
-          <input type="text" id="am-emergency" placeholder="Name & Phone">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Emergency Contact</label>
+            <input type="text" id="am-emergency" placeholder="Name & Phone">
+          </div>
+          <div class="form-group">
+            <label>Family Group ID</label>
+            <input type="text" id="am-family" placeholder="Leave blank for none">
+          </div>
         </div>
         <div class="form-group">
           <label>Notes</label>
@@ -216,7 +232,7 @@
         <div class="form-row">
           <div class="form-group">
             <label>Amount Paid *</label>
-            <input type="number" id="am-paid" required placeholder="0" min="0">
+            <input type="number" id="am-paid" required placeholder="0" min="0" oninput="onPaymentInputChange()">
           </div>
           <div class="form-group">
             <label>Payment Method</label>
@@ -229,10 +245,25 @@
             </select>
           </div>
         </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Payment Status</label>
+            <select id="am-paystatus" onchange="onPaymentStatusChange()">
+              <option value="auto">Auto (based on amount)</option>
+              <option value="paid">Paid in Full</option>
+              <option value="partial">Partially Paid</option>
+              <option value="pending">Unpaid / Due Later</option>
+            </select>
+          </div>
+          <div class="form-group" id="am-expected-wrap" style="display:none">
+            <label>Expected Payment Date</label>
+            <input type="date" id="am-expected">
+          </div>
+        </div>
 
         <div class="form-actions">
           <button type="button" class="btn btn-secondary" onclick="closeModal('modal-add-member')">Cancel</button>
-          <button type="submit" class="btn btn-primary">Create Member</button>
+          <button type="submit" class="btn btn-primary" id="am-submit-btn">Create Member</button>
         </div>
       </form>
     </div>
@@ -269,6 +300,28 @@
       <button class="modal-close" onclick="closeModal('modal-freeze')">✕</button>
     </div>
     <div class="modal-body" id="freeze-body"></div>
+  </div>
+</div>
+
+<!-- DISCONTINUE MODAL -->
+<div id="modal-discontinue" class="modal-overlay" style="display:none">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2>⏹ Discontinue Membership</h2>
+      <button class="modal-close" onclick="closeModal('modal-discontinue')">✕</button>
+    </div>
+    <div class="modal-body" id="discontinue-body"></div>
+  </div>
+</div>
+
+<!-- FAMILY MODAL -->
+<div id="modal-family" class="modal-overlay" style="display:none">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2>👨‍👩‍👧 Family Members</h2>
+      <button class="modal-close" onclick="closeModal('modal-family')">✕</button>
+    </div>
+    <div class="modal-body" id="family-body"></div>
   </div>
 </div>
 
@@ -347,6 +400,16 @@
         <div class="form-group">
           <label>Applicable Plans</label>
           <div id="of-plans" class="goal-chips"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Usage Limit (total signups)</label>
+            <input type="number" id="of-usage" min="0" placeholder="Leave blank for unlimited">
+          </div>
+          <div class="form-group" id="of-value-group">
+            <label id="of-value-label">Discount %</label>
+            <input type="number" id="of-value" min="0" placeholder="e.g. 20">
+          </div>
         </div>
         <div class="form-row">
           <div class="form-group">

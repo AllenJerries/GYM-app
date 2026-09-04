@@ -965,6 +965,11 @@ textarea { resize: vertical; }
 .empty-state .es-icon { font-size: 44px; margin-bottom: 10px; }
 .empty-state .es-text { font-size: 15px; font-weight: 600; color: var(--gray-500); }
 .empty-state .es-sub { font-size: 13px; margin-top: 4px; }
+.empty-state .es-cta { margin-top: 18px; min-height: 48px; padding: 0 24px; }
+.dash-welcome { text-align: center; padding: 28px 16px 12px; }
+.dash-welcome .dw-icon { font-size: 52px; }
+.dash-welcome h1 { font-size: 22px; margin: 10px 0 4px; }
+.dash-welcome p { color: var(--gray-500); font-size: 14px; margin-bottom: 18px; }
 
 /* ======================== MODALS / BOTTOM SHEETS ======================== */
 .modal-overlay {

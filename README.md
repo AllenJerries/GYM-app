@@ -26,11 +26,15 @@ A production-quality, mobile-first gym membership management app for **The Chang
 ### Business Intelligence
 - Dashboard with expiry buckets (today / 3 / 7 days), frozen & discontinued counts, today's collection, monthly revenue, outstanding dues, and a smart Follow-Up queue (expiring + payment-due members).
 - Reports: plan distribution, goal distribution, membership status, and payment-method charts (Chart.js), plus a **PDF monthly report** (jsPDF).
-- Backup & restore to a JSON file; one-click demo-data reset.
+- Backup & restore to a JSON file.
 
-### Security & Data
+### 🔒 Security & Data
 - Optional **Admin PIN** (4–6 digits) shown only at login when enabled. Stored only in the browser.
+- The app **starts with an empty database** — no sample members, plans, offers or fake payments are ever created.
+- Members, plans, offers, payments and memberships are created **only by the admin** through the app itself. On first launch the dashboard welcomes you and the Members page shows an empty state.
 - All data persists in `localStorage` under the app's storage key. Legacy data is auto-migrated on load (e.g. old "Stopped" → "Discontinued").
+- **Reset all data** (Settings → Reset Database) permanently clears everything and starts fresh.
+- Backup & restore to a JSON file preserves the real data you enter.
 - Centralized business rules (`calcFinalPrice`, `offerApplies`, `getMemberStatus`, …) are kept decoupled from the UI so a future Flutter app can reuse the same logic.
 
 ## 📱 Device Support
@@ -61,7 +65,7 @@ Then open `http://localhost:3000`.
 ```
 index.html       App shell, screens, modals
 style.css        Mobile-first responsive styling
-script.js        All logic, business rules, demo data
+script.js        All logic & business rules (starts with an empty database)
 assets/          Reserved for future assets
 ```
 

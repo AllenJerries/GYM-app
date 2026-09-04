@@ -1,6 +1,8 @@
 // ======================== DATA LAYER ========================
-const STORAGE_KEY = 'gymmaster_data';
+const STORAGE_KEY = 'thechangefitness_data';
 let DB = { members: [], plans: [], offers: [], payments: [], settings: {} };
+
+function emptyDB() { return { members: [], plans: [], offers: [], payments: [], settings: {} }; }
 
 function saveDB() { localStorage.setItem(STORAGE_KEY, JSON.stringify(DB)); }
 function loadDB() {
@@ -62,10 +64,9 @@ function isMembershipFrozen(mem) {
 function getTotalPaid(member) {
   return DB.payments.filter(p => p.memberId === member.id && (p.status === 'paid' || p.status === 'partial')).reduce((s, p) => s + (p.amount || 0), 0);
 }
-function recomputePaymentStatus(membership) {
-  const total = getTotalPaid({ id: membership.memberId });
-  const mem = DB.members.find(m => m.id === membership.memberId);
-  const paid = DB.payments.filter(p => p.memberId === membership.memberId && p.membershipId === membership.id).reduce((s, p) => s + (p.amount || 0), 0);
+function recomputePaymentStatus(membership, memberId) {
+  const id = memberId || membership.memberId;
+  const paid = DB.payments.filter(p => p.memberId === id && p.membershipId === membership.id).reduce((s, p) => s + (p.amount || 0), 0);
   const final = membership.finalPrice;
   if (paid >= final) membership.paymentStatus = 'paid';
   else if (paid > 0) membership.paymentStatus = 'partial';
@@ -276,10 +277,17 @@ function renderDashboard() {
   const renewalsThisMonth = thisMonth.filter(p => p.type === 'renewal').length;
 
   let html = `
+    ${DB.members.length === 0 ? `
+    <div class="dash-welcome">
+      <div class="dw-icon">🏋️</div>
+      <h1>Welcome to The Change Fitness Gym</h1>
+      <p>Add your first member to get started.</p>
+      <button class="btn btn-primary" onclick="openAddMember()">➕ Add Member</button>
+    </div>` : `
     <div class="dash-head">
       <h1>${getGreeting()}, Sasi Master 👋</h1>
       <p>Here's what needs your attention today.</p>
-    </div>
+    </div>`}
 
     <div class="section-head">⚠️ Membership Status</div>
     <div class="expiry-list">
@@ -451,7 +459,11 @@ function renderMembers(filter) {
   `;
 
   if (members.length === 0) {
-    html += '<div class="empty-state"><div class="es-icon">👥</div><div class="es-text">No members found</div><div class="es-sub">Try adjusting your filters or add a new member.</div></div>';
+    if (DB.members.length === 0) {
+      html += '<div class="empty-state"><div class="es-icon">🏋️</div><div class="es-text">No members yet</div><div class="es-sub">Add your first member to start managing your gym.</div><button class="btn btn-primary es-cta" onclick="openAddMember()">➕ Add Member</button></div>';
+    } else {
+      html += '<div class="empty-state"><div class="es-icon">👥</div><div class="es-text">No members found</div><div class="es-sub">Try adjusting your filters or add a new member.</div></div>';
+    }
     document.getElementById('page-members').innerHTML = html;
     return;
   }
@@ -646,8 +658,13 @@ function renderPlans() {
       <h2>Membership Plans</h2>
       <button class="btn btn-primary" onclick="openPlanModal()">➕ Add Plan</button>
     </div>
-    <div class="plans-grid-display">
   `;
+  if (DB.plans.length === 0) {
+    html += '<div class="empty-state"><div class="es-icon">💳</div><div class="es-text">No plans yet</div><div class="es-sub">Create your first membership plan to start enrolling members.</div><button class="btn btn-primary es-cta" onclick="openPlanModal()">➕ Add Plan</button></div>';
+    document.getElementById('page-plans').innerHTML = html;
+    return;
+  }
+  html += '<div class="plans-grid-display">';
   DB.plans.forEach(p => {
     html += `
       <div class="plan-card-display">
@@ -1205,8 +1222,8 @@ function renderSettings() {
     </div>
 
     <div class="settings-section">
-      <h3>🔄 Reset Demo Data</h3>
-      <p>Reset all data and reload the demo with sample data. This cannot be undone.</p>
+      <h3>🔄 Reset Database</h3>
+      <p>Delete all data and start fresh with an empty database. This cannot be undone.</p>
       <div class="settings-actions">
         <button class="btn btn-danger" onclick="confirmReset()">🗑️ Reset All Data</button>
       </div>
@@ -1295,11 +1312,10 @@ function importBackup(e) {
   e.target.value = '';
 }
 function confirmReset() {
-  showConfirm('Reset All Data?', 'This will delete all members, plans, offers, and payments. Demo data will be reloaded.', 'Reset', '🗑️', () => {
+  showConfirm('Reset All Data?', 'This will permanently delete all members, plans, offers, and payments. The database will start fresh and empty.', 'Reset', '🗑️', () => {
     resetDB();
-    generateDemoData();
     saveDB();
-    showToast('Demo data has been reset', 'success');
+    showToast('All data has been deleted', 'success');
     navigateTo('dashboard');
   });
 }
@@ -1355,7 +1371,11 @@ function openAddMember() {
 function renderMemberPlansAndOffers() {
   // Render plans
   const plansEl = document.getElementById('am-plans');
-  plansEl.innerHTML = DB.plans.filter(p => p.active !== false).map(p => `
+  const activePlans = DB.plans.filter(p => p.active !== false);
+  if (activePlans.length === 0) {
+    plansEl.innerHTML = `<div class="empty-state"><div class="es-icon">💳</div><div class="es-text">No plans yet</div><div class="es-sub">Create a membership plan before adding members.</div><button class="btn btn-primary es-cta" onclick="closeModal('modal-add-member');navigateTo('plans');openPlanModal()">➕ Create Plan</button></div>`;
+  } else {
+    plansEl.innerHTML = activePlans.map(p => `
     <div class="plan-select-card" onclick="selectPlan('${p.id}', this)">
       <input type="radio" name="am-plan" value="${p.id}">
       <div class="psc-name">${p.name}</div>
@@ -1363,6 +1383,7 @@ function renderMemberPlansAndOffers() {
       <div class="psc-duration">${p.duration} ${p.unit}</div>
     </div>
   `).join('');
+  }
 
   // Render active offers (respect usage limit)
   const offersEl = document.getElementById('am-offers');
@@ -1952,7 +1973,7 @@ function confirmDeleteMember() {
       <div class="dd-row"><span>Member ID</span><strong>${esc(m.id)}</strong></div>
       <div class="dd-row"><span>Phone</span><strong>${esc(m.phone || '—')}</strong></div>
     </div>
-    <p style="font-size:13px;color:var(--gray-500);margin-top:10px">This will remove the member and their membership/payment records from this demo database.</p>`;
+    <p style="font-size:13px;color:var(--gray-500);margin-top:10px">This will remove the member and their membership/payment records from the gym database.</p>`;
   showConfirm(
     'Delete this member permanently?',
     '',
@@ -2079,7 +2100,7 @@ function processPayment() {
   });
   const expected = document.getElementById('pay-expected').value;
   mem.expectedPaymentDate = expected || null;
-  recomputePaymentStatus(mem);
+  recomputePaymentStatus(mem, m.id);
   m.updatedAt = new Date().toISOString();
   saveDB();
   closeModal('modal-payment');
@@ -2146,205 +2167,13 @@ function openWhatsApp(memberId) {
   if (window.open) { window.open(url, '_blank'); } else { showToast('WhatsApp not available', 'error'); }
 }
 
-// ======================== DEMO DATA ========================
-function generateDemoData() {
-  // Plans
-  DB.plans = [
-    { id: 'PL-100001', name: 'Monthly', duration: 1, unit: 'Months', price: 1200, description: 'Basic monthly plan', active: true },
-    { id: 'PL-100002', name: '3 Months', duration: 3, unit: 'Months', price: 3000, description: 'Popular 3-month plan', active: true },
-    { id: 'PL-100003', name: '6 Months', duration: 6, unit: 'Months', price: 5000, description: 'Best value 6-month plan', active: true },
-    { id: 'PL-100004', name: 'Yearly', duration: 1, unit: 'Years', price: 8000, description: 'Premium yearly plan', active: true },
-  ];
-
-  const goals = ['Weight Loss', 'Muscle Building', 'Strength Training', 'General Fitness', 'Fat Loss', 'Competition Training', 'Weight Gain'];
-  const firstNames = ['Arun','Priya','Rahul','Sneha','Vikram','Ananya','Deepak','Meera','Karthik','Pooja','Suresh','Kavita','Ravi','Divya','Amit','Nisha','Sanjay','Rekha','Manoj','Geeta','Vikas','Sunita','Rajesh','Lata','Nitin'];
-  const lastNames = ['Kumar','Sharma','Singh','Patel','Reddy','Gupta','Nair','Iyer','Das','Rao','Joshi','Mishra','Tiwari','Verma','Choudhary','Mehta','Shah','Pandey','Chauhan','Bhatt'];
-
-  DB.members = [];
-  DB.payments = [];
-
-  const todayDate = new Date();
-
-  firstNames.forEach((fn, i) => {
-    const name = fn + ' ' + lastNames[i % lastNames.length];
-    const phone = '9' + (876543210 + i * 1111111).toString().substring(0, 10);
-    const regDaysAgo = Math.floor(Math.random() * 180) + 30;
-    const regDate = new Date(todayDate);
-    regDate.setDate(regDate.getDate() - regDaysAgo);
-
-    const planIdx = Math.floor(Math.random() * DB.plans.length);
-    const plan = DB.plans[planIdx];
-    const memberGoals = [goals[Math.floor(Math.random() * goals.length)]];
-    if (Math.random() > 0.6) memberGoals.push(goals[Math.floor(Math.random() * goals.length)]);
-
-    // Vary expiry dates for demo
-    let expiryOffset;
-    if (i < 3) expiryOffset = -Math.floor(Math.random() * 10) - 1; // Expired
-    else if (i < 6) expiryOffset = 0; // Expiring today
-    else if (i < 10) expiryOffset = Math.floor(Math.random() * 3) + 1; // 1-3 days
-    else if (i < 14) expiryOffset = Math.floor(Math.random() * 4) + 4; // 4-7 days
-    else expiryOffset = Math.floor(Math.random() * 90) + 8; // Active
-
-    const startDate = regDate.toISOString().split('T')[0];
-    let expiryDate = new Date(regDate);
-    if (plan.unit === 'Days') expiryDate.setDate(expiryDate.getDate() + plan.duration);
-    else if (plan.unit === 'Months') expiryDate.setMonth(expiryDate.getMonth() + plan.duration);
-    else expiryDate.setFullYear(expiryDate.getFullYear() + plan.duration);
-    // Override to create variety
-    expiryDate = new Date(todayDate);
-    expiryDate.setDate(expiryDate.getDate() + expiryOffset);
-    const expiryStr = expiryDate.toISOString().split('T')[0];
-
-    const paid = Math.random() > 0.15;
-    const partialPaid = !paid && Math.random() > 0.5;
-    const paymentStatus = paid ? 'paid' : partialPaid ? 'partial' : 'pending';
-
-    let status = 'active';
-    if (i >= 0 && i < 3) status = 'active'; // expired but status active (handled by expiry check)
-    if (i === 22) status = 'discontinued';
-
-    const memId = 'GM-' + String(100001 + i);
-    const membershipId = 'MEM-' + String(200001 + i);
-
-    const member = {
-      id: memId,
-      name: name,
-      phone: phone,
-      whatsapp: phone,
-      email: Math.random() > 0.6 ? name.toLowerCase().replace(' ', '.') + '@email.com' : '',
-      dob: `${1985 + Math.floor(Math.random() * 20)}-${String(Math.floor(Math.random() * 12) + 1).padStart(2, '0')}-${String(Math.floor(Math.random() * 28) + 1).padStart(2, '0')}`,
-      gender: Math.random() > 0.4 ? 'Male' : 'Female',
-      registrationDate: regDate.toISOString().split('T')[0],
-      goals: memberGoals,
-      emergency: Math.random() > 0.5 ? '9' + (9876543210 - i * 1111111).toString().substring(0, 10) : '',
-      notes: '',
-      familyGroupId: i < 2 ? 'FAM-001' : null,
-      status: status,
-      memberships: [{
-        id: membershipId,
-        planId: plan.id,
-        offerId: i < 2 ? 'OF-300001' : null,
-        startDate: startDate,
-        expiryDate: expiryStr,
-        originalPrice: plan.price,
-        discount: i < 2 ? Math.round(plan.price * 0.33) : 0,
-        finalPrice: i < 2 ? Math.round(plan.price * 0.67) : plan.price,
-        paymentStatus: paymentStatus,
-        status: i === 22 ? 'discontinued' : 'active',
-        freezeHistory: [],
-        createdAt: regDate.toISOString()
-      }],
-      createdAt: regDate.toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    // Membership history for some
-    if (i > 10) {
-      const oldPlan = DB.plans[Math.floor(Math.random() * DB.plans.length)];
-      const oldStart = new Date(regDate);
-      oldStart.setMonth(oldStart.getMonth() - 6);
-      member.memberships.push({
-        id: 'MEM-H' + i,
-        planId: oldPlan.id,
-        offerId: null,
-        startDate: oldStart.toISOString().split('T')[0],
-        expiryDate: regDate.toISOString().split('T')[0],
-        originalPrice: oldPlan.price,
-        discount: 0,
-        finalPrice: oldPlan.price,
-        paymentStatus: 'paid',
-        status: 'expired',
-        freezeHistory: [],
-        createdAt: oldStart.toISOString()
-      });
-    }
-
-    DB.members.push(member);
-
-    // Payment record
-    DB.payments.push({
-      id: 'PAY-' + String(300001 + i),
-      memberId: memId,
-      membershipId: membershipId,
-      amount: member.memberships[0].finalPrice * (paid ? 1 : partialPaid ? 0.5 : 0),
-      method: ['Cash', 'UPI', 'Card', 'Bank Transfer'][Math.floor(Math.random() * 4)],
-      date: regDate.toISOString().split('T')[0],
-      status: paymentStatus === 'paid' ? 'paid' : paymentStatus === 'partial' ? 'partial' : 'pending',
-      pendingAmount: member.memberships[0].finalPrice * (paid ? 0 : partialPaid ? 0.5 : 1),
-      type: i > 10 ? 'renewal' : 'registration',
-      createdAt: regDate.toISOString()
-    });
-  });
-
-  // Add a few more members with family groups
-  for (let i = 0; i < 3; i++) {
-    const idx = 25 + i;
-    const name = ['Rohit Mehra', 'Sonia Bajaj', 'Tariq Khan'][i];
-    const phone = '9' + (801234567 + i * 1000000).toString().substring(0, 10);
-    const plan = DB.plans[1];
-    const regDate = new Date(todayDate);
-    regDate.setDate(regDate.getDate() - Math.floor(Math.random() * 90) - 10);
-    const expiryDate = new Date(todayDate);
-    expiryDate.setDate(expiryDate.getDate() + Math.floor(Math.random() * 60) - 20);
-
-    const memId = 'GM-' + String(100026 + i);
-    DB.members.push({
-      id: memId, name, phone, whatsapp: phone, email: '',
-      dob: '', gender: i % 2 === 0 ? 'Male' : 'Female',
-      registrationDate: regDate.toISOString().split('T')[0],
-      goals: [goals[i % goals.length]], emergency: '',
-      notes: '', familyGroupId: 'FAM-001', status: 'active',
-      memberships: [{
-        id: 'MEM-' + String(200026 + i), planId: plan.id, offerId: 'OF-300001',
-        startDate: regDate.toISOString().split('T')[0],
-        expiryDate: expiryDate.toISOString().split('T')[0],
-        originalPrice: plan.price, discount: Math.round(plan.price * 0.33),
-        finalPrice: Math.round(plan.price * 0.67),
-        paymentStatus: 'paid', status: 'active', freezeHistory: [],
-        createdAt: regDate.toISOString()
-      }],
-      createdAt: regDate.toISOString(), updatedAt: new Date().toISOString()
-    });
-    DB.payments.push({
-      id: 'PAY-' + String(300026 + i), memberId: memId,
-      membershipId: 'MEM-' + String(200026 + i),
-      amount: Math.round(plan.price * 0.67),
-      method: 'Cash', date: regDate.toISOString().split('T')[0],
-      status: 'paid', pendingAmount: 0, type: 'registration',
-      createdAt: regDate.toISOString()
-    });
-  }
-
-  // Offers
-  DB.offers = [
-    {
-      id: 'OF-300001', name: '1+1 Family Offer', type: '1plus1', value: 0,
-      planIds: ['PL-100002', 'PL-100003'],
-      startDate: '2026-01-01', endDate: '2026-12-31',
-      description: 'Buy one membership and add one family member free.'
-    },
-    {
-      id: 'OF-300002', name: 'Festival Offer', type: 'percentage', value: 20,
-      planIds: ['PL-100004'],
-      startDate: '2026-08-15', endDate: '2026-09-30',
-      description: '20% off on yearly plan during festival season.'
-    },
-    {
-      id: 'OF-300003', name: 'Family Discount', type: 'family', value: 500,
-      planIds: ['PL-100002', 'PL-100003', 'PL-100004'],
-      startDate: '2026-01-01', endDate: '2026-12-31',
-      description: '₹500 off for family members.'
-    }
-  ];
-}
-
 // ======================== INIT ========================
 function migrateLegacyData() {
   (DB.members || []).forEach(m => {
     if (m.status === 'stopped') m.status = 'discontinued';
     (m.memberships || []).forEach(mem => {
       if (mem.status === 'stopped') mem.status = 'discontinued';
-      recomputePaymentStatus(mem);
+recomputePaymentStatus(mem, m.id);
     });
   });
   if (!DB.settings) DB.settings = {};
@@ -2352,18 +2181,11 @@ function migrateLegacyData() {
 
 function init() {
   if (!loadDB()) {
-    generateDemoData();
+    DB = emptyDB();
     saveDB();
   }
   migrateLegacyData();
   saveDB();
-  // Check if plans exist (in case of data corruption)
-  if (!DB.plans || DB.plans.length === 0) {
-    generateDemoData();
-    saveDB();
-    migrateLegacyData();
-    saveDB();
-  }
   // Custom goal chip toggles the custom input
   const chip = document.getElementById('am-goal-custom-chip');
   if (chip && typeof chip.addEventListener === 'function') {
